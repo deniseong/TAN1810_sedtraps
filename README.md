@@ -12,8 +12,14 @@ All unprocessed bioinformatics data have been deposited in NCBI Sequence Read Ar
 - ASV abundance (metapr2_asv_set_47_abundance.xls)
 
 ## R_sediment_traps
+Folders:
 - init_files: load libraries, colours, read data
 - data: metadata (sampling coordinates, CTD, nutrients, chlorophyll, flux measurements)
+- deseq: deseq raw data output
+- figs_paper
+- tables
+
+Rmd files:
 - 01_map_v2.Rmd: map figure
 - 02_Table_env.Rmd: metadata processing
 - 03_POC plots.Rmd
@@ -23,6 +29,4 @@ All unprocessed bioinformatics data have been deposited in NCBI Sequence Read Ar
 - 07_shared_checks.Rmd: check for common ASVs between upper and lower water columns
 - 07_shared_v3.Rmd: "shared ASVs" analysis
 - 08_deseq_v5.Rmd: Deseq for export and transfer analysis
-- deseq folder: deseq raw data output
-- figs_paper: figures
-- tables
+
