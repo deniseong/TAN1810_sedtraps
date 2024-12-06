@@ -1,0 +1,77 @@
+"0",""
+"0",""
+"0","# subset to only the dates of sampling"
+"0","SA1_A <- nutrients_raw %>%"
+"0","  as_tbl_time(index = date) %>%"
+"0","  filter_time('2018-10-24' ~ '2018-10-28') %>%"
+"0","  # filter_time('2018-10-24 16' ~ '2018-10-30 5')  %>% # changing to the whole SA1 duration to include CTD water sample"
+"0","  mutate(cycle_name = ""SA1-a"")"
+"2","Warning:"
+"2"," [38;5;232mThere was 1 warning in `reconstruct()`.[39m
+[38;5;232m[36mℹ[38;5;232m In argument: `{ ... }`.[39m
+Caused by warning in `sorted_range_search()`:
+[33m![39m Note: Index not ordered. tibbletime assumes index is in ascending order. Results may not be as desired.
+"
+"0","SA1_B <- nutrients_raw %>%"
+"0","  as_tbl_time(index = date) %>%"
+"0","  filter_time('2018-10-28' ~ '2018-10-30') %>%"
+"0","  # filter_time('2018-10-24 16' ~ '2018-10-30 5')  %>% # changing to the whole SA1 duration to include CTD water sample"
+"0","  mutate(cycle_name = ""SA1-b"")"
+"2","Warning:"
+"2"," [38;5;232mThere was 1 warning in `reconstruct()`.[39m
+[38;5;232m[36mℹ[38;5;232m In argument: `{ ... }`.[39m
+Caused by warning in `sorted_range_search()`:
+[33m![39m Note: Index not ordered. tibbletime assumes index is in ascending order. Results may not be as desired.
+"
+"0","SA2 <- nutrients_raw %>%"
+"0","  as_tbl_time(index = date) %>%"
+"0","  filter_time('2018-11-02' ~ '2018-11-06') %>%"
+"0","  mutate(cycle_name = ""SA2"")"
+"2","Warning:"
+"2"," [38;5;232mThere was 1 warning in `reconstruct()`.[39m
+[38;5;232m[36mℹ[38;5;232m In argument: `{ ... }`.[39m
+Caused by warning in `sorted_range_search()`:
+[33m![39m Note: Index not ordered. tibbletime assumes index is in ascending order. Results may not be as desired.
+"
+"0","ST1 <- nutrients_raw %>%"
+"0","  as_tbl_time(index = date) %>%"
+"0","  filter_time('2018-11-07' ~ '2018-11-10') %>%"
+"0","  mutate(cycle_name = ""ST1"")"
+"2","Warning:"
+"2"," [38;5;232mThere was 1 warning in `reconstruct()`.[39m
+[38;5;232m[36mℹ[38;5;232m In argument: `{ ... }`.[39m
+Caused by warning in `sorted_range_search()`:
+[33m![39m Note: Index not ordered. tibbletime assumes index is in ascending order. Results may not be as desired.
+"
+"0","ST2 <- nutrients_raw %>%"
+"0","  as_tbl_time(index = date) %>%"
+"0","  filter_time('2018-11-12' ~ '2018-11-14')  %>%"
+"0","  mutate(cycle_name = ""ST2"") %>%"
+"0","  filter(!(date == ""2018-11-15""))"
+"2","Warning:"
+"2"," [38;5;232mThere was 1 warning in `reconstruct()`.[39m
+[38;5;232m[36mℹ[38;5;232m In argument: `{ ... }`.[39m
+Caused by warning in `sorted_range_search()`:
+[33m![39m Note: Index not ordered. tibbletime assumes index is in ascending order. Results may not be as desired.
+"
+"0","SA3 <- nutrients_raw %>%"
+"0","  as_tbl_time(index = date) %>%"
+"0","  filter_time('2018-11-16' ~ '2018-11-19') %>%"
+"0","  mutate(cycle_name = ""SA3"")"
+"2","Warning:"
+"2"," [38;5;232mThere was 1 warning in `reconstruct()`.[39m
+[38;5;232m[36mℹ[38;5;232m In argument: `{ ... }`.[39m
+Caused by warning in `sorted_range_search()`:
+[33m![39m Note: Index not ordered. tibbletime assumes index is in ascending order. Results may not be as desired.
+"
+"0","nutrients_raw <- list(SA1_A, SA1_B, SA2, SA3, ST1, ST2) "
+"0","nutrients_raw <- Reduce("
+"0","  function(x, y, ...) merge(x, y, all = TRUE, ...),"
+"0","  nutrients_raw"
+"0",")"
+"0",""
+"0","#check the dates"
+"0","check <- nutrients_raw  %>% "
+"0","  select(date, cycle_name, time, CTD) %>%"
+"0","  distinct()"
+"0","check"

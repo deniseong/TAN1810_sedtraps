@@ -1,0 +1,71 @@
+"0","library(here)"
+"2","here() starts at /Users/deniseong/Documents/GitHub/Cruise-New-Zealand-TAN1810/R_sediment_traps
+"
+"0","source(here(""init_files"", ""init.R"")) #for libraries"
+"2","
+Attaching package: ‘dplyr’
+
+"
+"2","The following objects are masked from ‘package:stats’:
+
+    filter, lag
+
+"
+"2","The following objects are masked from ‘package:base’:
+
+    intersect, setdiff, setequal, union
+
+"
+"2","Registered S3 method overwritten by 'data.table':
+  method           from
+  print.data.table     
+"
+"2","Loading required package: permute
+"
+"2","Loading required package: lattice
+"
+"2","This is vegan 2.6-6.1
+"
+"2","
+Attaching package: ‘patchwork’
+
+"
+"2","The following object is masked from ‘package:cowplot’:
+
+    align_plots
+
+"
+"2","Registered S3 methods overwritten by 'registry':
+  method               from 
+  print.registry_field proxy
+  print.registry_entry proxy
+"
+"2","Registered S3 method overwritten by 'seriation':
+  method         from 
+  reorder.hclust vegan
+"
+"2","
+Attaching package: ‘seriation’
+
+"
+"2","The following object is masked from ‘package:lattice’:
+
+    panel.lines
+
+"
+"2","The following object is masked from ‘package:permute’:
+
+    permute
+
+"
+"2","
+Attaching package: ‘purrr’
+
+"
+"2","The following object is masked from ‘package:maps’:
+
+    map
+
+"
+"2","Error in library(microViz) : there is no package called ‘microViz’
+"

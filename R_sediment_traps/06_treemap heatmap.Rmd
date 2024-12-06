@@ -1,0 +1,441 @@
+---
+title: "treemap and heatmap"
+author: "Denise Ong"
+date: "2023-07-12"
+output: html_document
+---
+
+# Initialize
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(here)
+
+source(here("init_files", "init.R")) #for libraries
+source(here("init_files", "init_markdown.R")) #for markdown libraries
+source(here("init_files", "define_functions.R")) #functions to 1.transform to dataframe, 2.normalise and 3.create treemaps
+set.seed(1)
+
+
+# Subdivision palette
+divisionPalette <- readxl::read_excel(here("init_files", "division_palette.xlsx"))
+divisionPalette <- structure(divisionPalette$divisionPalette,.Names=divisionPalette$division) 
+```
+
+# load data
+```{r}
+source(here("init_files", "read_data_v3.R")) #load phyloseq and modify variables
+ps_all
+source(here("init_files", "filt_samples.R")) #filter out replicates, blanks etc. 
+ps
+ps_norm <- phyloseq_normalize_median(ps)
+ps_long <- phyloseq_transform_to_long(ps_norm) %>%
+  mutate(cycle_name_2 = fct_relevel(cycle_name_2, "ST1", "ST2", "SA-Sc", "SA1", "SA2")) %>%
+  mutate(sample = fct_relevel(sample, "water_CTD", "water_pump", "trap_fix", "trap_live", "core"))
+# check<-as.data.frame(ps@tax_table)
+taxa <- as.data.frame(ps@tax_table)
+```
+
+
+# Tree maps
+
+## By sample
+```{r}
+ctd <- ps_long %>%
+  filter(sample == "water_CTD") %>%
+  phyloseq_long_treemap(subdivision, class, "Surface water column (Niskin)", divisionPalette)
+ctd
+
+pump <- ps_long %>%
+   filter(sample == "water_pump") %>%
+  phyloseq_long_treemap(subdivision, class, "Lower water column (McLane pump)", divisionPalette)
+pump
+
+fix <-  ps_long %>%
+  filter(sample == "trap_fix") %>%
+  phyloseq_long_treemap(subdivision, class, "Fixed traps", divisionPalette)
+fix
+
+live <- ps_long %>%
+  filter(sample == "trap_live") %>%
+  phyloseq_long_treemap(subdivision, class, "Live traps", divisionPalette)
+live
+
+core <- ps_long %>%
+  filter(sample == "core") %>%
+  phyloseq_long_treemap(subdivision, class, "Sediment", divisionPalette)
+core
+
+p <- (ctd +pump + plot_spacer()) /
+  (fix | live | core) + plot_annotation(tag_levels = 'A') & theme(legend.position = "none")#+ plot_layout(guides = 'collect')
+
+# pdf("treemap_samples_v3.pdf", height= 10, width=15) ; plot(p) ; dev.off()
+# 
+colour <- ps_long %>%
+  phyloseq_long_treemap(subdivision, class, "colour", divisionPalette)
+colour
+# pdf("treemap_samples_v3_colour.pdf", height=5, width=7) ; plot(colour) ; dev.off()
+
+```
+
+## Traps, size fraction, supplementary figure
+```{r}
+fix_micro <- ps_long %>%
+  filter(sample == "trap_fix" & fraction_name == "micro") %>%
+  # filter(subdivision!= "Radiolaria") %>%
+  phyloseq_long_treemap(subdivision, class, "Fixed traps - micro", divisionPalette)
+fix_micro
+
+fix_total <- ps_long %>%
+   filter(sample == "trap_fix" & fraction_name == "total") %>%
+  # filter(subdivision!= "Radiolaria") %>%
+  phyloseq_long_treemap(subdivision, class, "Fixed traps - total", divisionPalette)
+fix_total
+
+fix_pico <-  ps_long %>%
+  filter(sample == "trap_fix" & fraction_name == "pico-nano") %>%
+  # filter(subdivision!= "Radiolaria") %>%
+  phyloseq_long_treemap(subdivision, class, "Fixed traps - pico-nano", divisionPalette)
+fix_pico
+
+live_micro <- ps_long %>%
+  filter(sample == "trap_live" & fraction_name == "micro") %>%
+  # filter(subdivision!= "Radiolaria") %>%
+  phyloseq_long_treemap(subdivision, class, "Live traps - micro", divisionPalette)
+live_micro
+
+live_total <- ps_long %>%
+  filter(sample == "trap_live" & fraction_name == "total") %>%
+    # filter(subdivision!= "Radiolaria") %>%
+  phyloseq_long_treemap(subdivision, class, "Live traps - total", divisionPalette)
+
+live_pico <- ps_long %>%
+  filter(sample == "trap_live" & fraction_name == "pico-nano") %>%
+    # filter(subdivision!= "Radiolaria") %>%
+  phyloseq_long_treemap(subdivision, class, "Live traps - pico-nano", divisionPalette)
+
+p <- (fix_pico +fix_micro + fix_total) /
+  (live_pico |live_micro |  live_total) + plot_annotation(tag_levels = 'A') & theme(legend.position = "none")
+p
+pdf("treemap_traps_size fraction_v2.pdf", height= 10, width=15) ; plot(p) ; dev.off()
+
+```
+
+# Heatmap
+## dataframe prep
+```{r}
+
+# ps_long %>%
+#   select(file_code) %>%
+#   unique() %>%
+#   summarise(n = n()) # 153 samples
+
+# pivot longer dataframe
+otu_rel_abund <- ps_long %>%
+  # filter(sample == "water_CTD") %>%
+    group_by(file_code) %>%
+    mutate(rel_abund = n_reads / sum(n_reads)) %>%
+    ungroup() %>%
+    select(-n_reads) %>%
+    pivot_longer(cols = asv_code:ASV,
+                 names_to = "level",
+                 values_to = "taxon") 
+
+```
+
+## checks for paper
+```{r}
+taxon_rel_abund <- otu_rel_abund %>%
+    filter(level == "subdivision") %>% #choose level here
+    group_by(water_mass, sample, cycle_name_2, file_code, taxon) %>%
+    summarise(rel_abund = 100*sum(rel_abund)) %>%
+    pivot_wider(names_from = taxon, values_from = rel_abund) %>% #from here is to replace any file_code with NA as 0
+    replace(., is.na(.), 0) %>%
+    pivot_longer(cols= !water_mass:file_code,
+                 names_to = "taxon",
+                 values_to = "rel_abund")
+
+# ## division level
+summary <- taxon_rel_abund %>%
+    # filter(cycle_name_2 == "SA2") %>%
+  group_by(taxon) %>%
+  summarise(#median = median(rel_abund),
+            mean = round(mean(rel_abund), 1),
+            sd = round(sd(rel_abund), 1)) #%>%
+  # filter(mean !=0) %>%
+  # unite("mean_sd", mean:sd, sep = "±") #%>%
+  # left_join(class_df,by=c("taxon" = "order"))
+summary 
+
+## summary for results - metazoan vs protist
+# summary <- taxon_rel_abund %>%
+#   mutate(protist = case_when(taxon == "Metazoa" ~ "Metazoa",
+#                              # taxon == "Ichthyosporea" ~ "Metazoa",
+#                        TRUE ~ "protist")) %>%
+#   group_by(sample, file_code, protist) %>%
+#   summarise(rel_abund = sum(rel_abund)) %>%
+#   group_by(protist) %>%
+#   summarise(mean = round(mean(rel_abund), 1),
+#             sd = round(sd(rel_abund), 1)) %>%
+#   unite("mean_sd", mean:sd, sep = "±")
+# summary
+
+
+#ASV abundance
+#get class name for facet grid grouping with class
+class_df <- ps_long %>%
+    select(division:ASV) %>%
+    distinct()
+
+# ## division level
+summary <- taxon_rel_abund %>%
+  left_join(class_df,by=c("taxon" = "ASV")) %>%
+  # filter(class == "Mamiellophyceae") %>%
+  filter(cycle_name_2 == "SA-Sc") %>%
+  group_by(water_mass,taxon) %>%
+  summarise(#median = median(rel_abund),
+            mean = round(mean(rel_abund), 1),
+            sd = round(sd(rel_abund), 1)) %>%
+  # unite("mean_sd", mean:sd, sep = "±") %>%
+  left_join(class_df,by=c("taxon" = "ASV"))# %>%
+  # pivot_wider(names_from = taxon, values_from = mean)
+
+
+
+
+```
+
+```{r}
+taxon_rel_abund <- otu_rel_abund %>%
+    filter(level == "subdivision") %>% #choose level here 
+    group_by(water_mass, sample, cycle_name_2, file_code, taxon) %>%
+    summarise(rel_abund = 100*sum(rel_abund)) %>%
+    pivot_wider(names_from = taxon, values_from = rel_abund) %>% #from here is to replace any file_code with NA as 0
+    replace(., is.na(.), 0) %>%
+    pivot_longer(cols= !water_mass:file_code,
+                 names_to = "taxon",
+                 values_to = "rel_abund")
+
+## summary for results
+# summary <- taxon_rel_abund %>%
+#   filter(taxon %in% c("Mamiellophyceae", "Chrysophyceae","Pelagophyceae","Prymnesiophyceae", "Chloropicophyceae")) %>%
+#   filter(cycle_name_2 != "SA1") %>%
+#   group_by(taxon, water_mass) %>%
+#   summarise(median = median(rel_abund),
+#             mean = mean(rel_abund))
+# summary
+```
+```{r}
+#get class name for facet grid grouping with class
+class_df <- ps_long %>%
+    select(division, class) %>%
+    distinct()
+
+#select 
+taxon_pool <- taxon_rel_abund %>%
+    group_by(sample, cycle_name_2, taxon) %>%
+    summarise(median = mean(rel_abund)) %>% #calculate median proportion of reads per sp per cycle
+    group_by(taxon) %>%
+    summarise(pool = max(median) <= 3, #species with a max median proportion of reads in any cycle < 5% is under Others
+              median = max(median),
+              .groups = "drop")
+
+
+ #heatmap
+ p1 <- #taxon_rel_abund %>%
+   inner_join(taxon_rel_abund, taxon_pool, by="taxon") %>%
+    mutate(taxon=if_else(pool, "Other", taxon)) %>%
+    group_by(file_code, sample, cycle_name_2, taxon) %>%
+    summarise(rel_abund = sum(rel_abund), 
+              .groups = "drop") %>%
+  group_by(sample, cycle_name_2, taxon) %>%
+  summarise(rel_abund = mean(rel_abund)) %>% # for median reads per taxon/per sample/per cycle
+      # left_join(class_df , by=c("taxon" = "class")) %>% # get class levels for sp.
+  ggplot(aes(x=cycle_name_2, y = taxon, fill =rel_abund)) +
+    geom_tile() +
+   geom_text(aes(label=formatC(signif(rel_abund,digits=2), digits=2, format="fg")), size=2, colour  = "darkgrey")+ # for number labels
+       # geom_text(aes(label=format(round(rel_abund,case_when(rel_abund<1 ~ 3,
+       #                                                      rel_abund >= 1 ~ 0)),
+       #                                                      nsmall = 0)),
+       #           size=2, colour = "darkgrey")+ # for number labels
+    # geom_text(aes(label=format(round(rel_abund,3), nsmall = 0)), size=2, colour  = "darkgrey")+ # for number labels
+   scale_fill_distiller(type = "seq", 
+                        palette = "PuBuGn",
+                        name = "Mean<br>Relative<br>Abund (%)",
+                       expand = c(0,0),
+                       trans = "log",
+        na.value = "#F7EEF7",
+        # na.value = "#0084A7",
+        direction = 1,
+        breaks = c(0, 0.1, 1, 10, 100),
+        limits = c(NA,100)
+        )+
+  # theme_minimal() +
+  theme(text=element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust = 0.5, hjust=1),
+        strip.text.y.left = element_text(angle = 0),
+        panel.spacing.x = unit(0,"lines"),
+        panel.spacing.y = unit(0,"lines"),
+        # panel.grid.major = element_blank(),
+        # panel.grid.minor = element_blank(),
+        # strip.background = element_blank(),
+        # axis.line = element_blank(),
+        # axis.ticks = element_blank(),
+        legend.title = element_markdown()) +
+  # scale_x_discrete(position = "top") +
+  xlab(NULL)+
+  ylab(NULL) +
+    facet_grid(.~sample, scales = "free", space = "free", switch = "y")
+p1
+# pdf("heatmap_class level.pdf", height=7, width=11) ; plot(p1) ; dev.off()
+
+```
+
+## order - mean for each cycle more than >5%
+```{r}
+taxon_rel_abund <- otu_rel_abund %>%
+    filter(level == "order") %>% #choose level here 
+    group_by(water_mass, sample, cycle_name_2, file_code, taxon) %>%
+    summarise(rel_abund = 100*sum(rel_abund)) %>%
+    pivot_wider(names_from = taxon, values_from = rel_abund) %>% #from here is to replace any file_code with NA as 0
+    replace(., is.na(.), 0) %>%
+    pivot_longer(cols= !water_mass:file_code,
+                 names_to = "taxon",
+                 values_to = "rel_abund")
+
+## summary for results
+# summary <- taxon_rel_abund %>%
+#   filter(taxon %in% c("Mamiellophyceae", "Chrysophyceae","Pelagophyceae","Prymnesiophyceae", "Chloropicophyceae")) %>%
+#   filter(cycle_name_2 != "SA1") %>%
+#   group_by(taxon, water_mass) %>%
+#   summarise(median = median(rel_abund),
+#             mean = mean(rel_abund))
+# summary
+```
+
+```{r}
+#get class name for facet grid grouping with class
+class_df <- ps_long %>%
+  unite(division_class, "subdivision", "class", sep = "_") %>%
+    select(division_class, order) %>%
+    distinct()
+
+#select 
+taxon_pool <- taxon_rel_abund %>%
+    group_by(sample, cycle_name_2, taxon) %>%
+    summarise(median = mean(rel_abund)) %>% #calculate median proportion of reads per sp per cycle
+    group_by(taxon) %>%
+    summarise(pool = max(median) <= 3, #species with a max median proportion of reads in any cycle < 5% is under Others
+              median = max(median),
+              .groups = "drop")
+
+
+ #heatmap
+ p1 <- #taxon_rel_abund %>%
+   inner_join(taxon_rel_abund, taxon_pool, by="taxon") %>%
+    mutate(taxon=if_else(pool, "Other", taxon)) %>%
+    group_by(file_code, sample, cycle_name_2, taxon) %>%
+    summarise(rel_abund = sum(rel_abund), 
+              .groups = "drop") %>%
+  group_by(sample, cycle_name_2, taxon) %>%
+  summarise(rel_abund = mean(rel_abund)) %>% # for median reads per taxon/per sample/per cycle
+      left_join(class_df , by=c("taxon" = "order")) %>% # get class levels for sp.
+  ggplot(aes(x=cycle_name_2, y = taxon, fill =rel_abund)) +
+    geom_tile() +
+   geom_text(aes(label=formatC(signif(rel_abund,digits=2), digits=2, format="fg")), size=2, colour  = "darkgrey")+ # for number labels
+       # geom_text(aes(label=format(round(rel_abund,case_when(rel_abund<1 ~ 3,
+       #                                                      rel_abund >= 1 ~ 0)),
+       #                                                      nsmall = 0)),
+       #           size=2, colour = "darkgrey")+ # for number labels
+    # geom_text(aes(label=format(round(rel_abund,3), nsmall = 0)), size=2, colour  = "darkgrey")+ # for number labels
+   scale_fill_distiller(type = "seq", 
+                        palette = "PuBuGn",
+                        name = "Mean<br>Relative<br>Abund (%)",
+                       expand = c(0,0),
+                       trans = "log",
+        na.value = "#F7EEF7",
+        # na.value = "#0084A7",
+        direction = 1,
+        breaks = c(0, 0.1, 1, 10, 100),
+        limits = c(NA,100)
+        )+
+  # theme_minimal() +
+  theme(text=element_text(size=10),
+        axis.text.x = element_text(angle=90, vjust = 0.5, hjust=1),
+        strip.text.y.left = element_text(angle = 0),
+        panel.spacing.x = unit(0,"lines"),
+        panel.spacing.y = unit(0,"lines"),
+        # panel.grid.major = element_blank(),
+        # panel.grid.minor = element_blank(),
+        # strip.background = element_blank(),
+        # axis.line = element_blank(),
+        # axis.ticks = element_blank(),
+        legend.title = element_markdown()) +
+  # scale_x_discrete(position = "top") +
+  xlab(NULL)+
+  ylab(NULL)  +
+    facet_grid(division_class~sample, scales = "free", space = "free", switch = "y") 
+p1
+# pdf("heatmap_v3_numbers.pdf", height=7, width=11) ; plot(p1) ; dev.off()
+
+```
+
+
+
+# for diatoms - 
+
+
+## familys - mean for each cycle more than >5%
+```{r}
+taxon_rel_abund <- otu_rel_abund %>%
+    filter(level == "family") %>% #choose level here 
+    group_by(water_mass, sample, cycle_name_2, file_code, taxon) %>%
+    summarise(rel_abund = 100*sum(rel_abund)) %>%
+    pivot_wider(names_from = taxon, values_from = rel_abund) %>% #from here is to replace any file_code with NA as 0
+    replace(., is.na(.), 0) %>%
+    pivot_longer(cols= !water_mass:file_code,
+                 names_to = "taxon",
+                 values_to = "rel_abund") 
+
+
+class_df <- ps_long %>%
+  unite(division_class, "division", "class", sep = "_") %>%
+    select(division_class, family) %>%
+    distinct()
+
+taxon_rel_abund_diatom <- inner_join(taxon_rel_abund, class_df, by=c("taxon" = "family")) %>%
+  filter(division_class ==  "Ochrophyta_Bacillariophyta")
+```
+
+
+```{r}
+#heatmap
+ p1 <- taxon_rel_abund_diatom %>%
+  group_by(sample, cycle_name_2, taxon) %>%
+  summarise(rel_abund = mean(rel_abund)) %>% # for median reads per taxon/per sample/per cycle
+  ggplot(aes(x=cycle_name_2, y = taxon, fill =rel_abund)) +
+    geom_tile() +
+     geom_text(aes(label=formatC(signif(rel_abund,digits=1), digits=1, format="fg")), size=2, colour  = "darkgrey")+ # for number labels
+    # geom_text(aes(label=format(round(rel_abund,0), nsmall = 0)), size=2, colour  = "darkgrey")+ # for number labels
+     scale_fill_distiller(type = "seq", 
+                          palette = "PuBuGn",
+                          name = "Mean<br>Relative<br>Abund (%)",
+                         expand = c(0,0),
+                         trans = "log",
+          na.value = "#F7EEF7",
+          direction = 1,
+          breaks = c(0, 0.1, 1, 10, 100),
+          limits = c(NA,100)
+          )+
+  theme(text=element_text(size=10),
+        axis.text.x = element_text(angle=90),
+        strip.text.y.left = element_text(angle = 0),
+        panel.spacing.x = unit(0,"lines"),
+        panel.spacing.y = unit(0,"lines"),
+        legend.title = element_markdown()) +
+  xlab(NULL)+
+  ylab(NULL)  +
+  facet_grid(.~sample, scales = "free", space = "free", switch = "y") 
+p1
+pdf("heatmap_diatom_SIGFIG.pdf", height=1.5, width=11) ; plot(p1) ; dev.off()
+
+```
+

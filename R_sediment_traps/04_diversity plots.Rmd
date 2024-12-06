@@ -1,0 +1,797 @@
+---
+title: "diversity analysis"
+author: "Denise Ong"
+output: html_document
+date: "2024-06-27"
+---
+
+
+Using this guide as reference to use microviz: https://david-barnett.github.io/microViz/articles/learn/exercises.html
+- Initial checks of the community - trap blanks, replicates and outlier results of fixed traps in SA2.
+- Check ASVs with low abundance reads
+- subset data options
+- Main figure - diversity and richness ASV, overlap between sample types
+- supplementary figure - diversity and richness of ASVs between cycles
+
+# Initialize
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(here)
+
+source(here("init_files", "init.R")) #for libraries
+source(here("init_files", "init_markdown.R")) #for markdown libraries
+source(here("init_files", "define_functions.R")) #functions to 1.transform to dataframe, 2.normalise and 3.create treemaps
+# cbp1 <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7") #another colour-blind palette, if the previous palatte has colours that are too close together.
+
+
+#Colours for cycle
+colours_cycle <- readxl::read_excel(here("init_files", "colours_cycle.xlsx"))
+colours_cycle <- structure(colours_cycle$colour,.Names=colours_cycle$cycle)
+
+set.seed(1)
+```
+
+
+# load data
+```{r}
+source(here("init_files", "read_data_v3.R")) #load phyloseq and modify variables
+ps_all
+```
+
+## Initial checks 
+###  Blanks
+blanks: not open during deployment. has a completely different composition.
+```{r}
+# sample <- as.data.frame(ps_all@sam_data)
+plot_list <- ps_all %>%
+  ps_filter(sample == "trap_blank_fix" | sample == "trap_fix" | sample == "trap_blank_live" | sample == "trap_live") %>%
+  ps_mutate(fixing = case_when(substrate == "sediment trap blank" ~ "blank",
+                               substrate == "sediment trap material" ~ "sample")) %>%
+  ps_mutate(sample_trap = case_when(sample == "trap_blank_fix" ~ "Fixed traps", 
+                                    sample == "trap_fix" ~ "Fixed traps",
+                                    sample == "trap_blank_live" ~ "Live traps",
+                                    sample == "trap_live" ~ "Live traps")) %>%
+  ps_arrange(sample_trap, fixing) %>%
+  comp_barplot(
+    tax_level = "class", n_taxa = 15,
+    label = "fixing",
+    group_by = "sample_trap"
+  )
+
+# Plot them side by side with the patchwork package.
+patch <- patchwork::wrap_plots(plot_list, nrow = 1, guides = "collect")
+patch <- patch & facet_grid(fct_relevel(cycle_name_2, "ST1", "ST2", "SA1-A", "SA1-B", "SA2", "SA3") ~ ., space = "free", scales = "free") & coord_flip()
+patch <-  patch + plot_annotation(tag_levels = 'A') # make all plots horizontal (note: use & instead of +)
+patch
+# pdf("checks_blank traps.pdf", height= 10, width=10) ; plot(patch) ; dev.off()
+
+```
+
+
+```{r}
+#fixed †raps
+p <- ps_all %>%
+   ps_filter(sample == "trap_blank_fix" | sample == "trap_fix") %>% # filter after tax mutate
+  ps_arrange(substrate) %>%
+  comp_barplot(
+    tax_level = "class", n_taxa = 15, merge_other = FALSE,
+    label = "substrate_description_detailed"
+    ) +
+    coord_flip() +
+  facet_grid(cycle_name ~., space = "free", scales = "free")
+p
+# pdf("figs_microviz/checks_blank fixed traps.pdf", height= 10, width=10) ; plot(p) ; dev.off()
+
+
+# Blanks - live traps
+# same, more chrysophyceae in blanks
+
+p <- ps_all %>%
+   ps_filter(sample == "trap_blank_live" | sample == "trap_live") %>% # filter after tax mutate
+  # ps_arrange(substrate) %>%
+  comp_barplot(
+    tax_level = "class", n_taxa = 15, merge_other = FALSE,
+    label = "substrate_description_detailed"
+    ) +
+    coord_flip() +
+  facet_grid(cycle_name ~., space = "free", scales = "free")
+p
+# pdf("figs_microviz/checks_blank live traps.pdf", height= 10, width=10) ; plot(p) ; dev.off()
+
+```
+
+### Replicates
+replicates look similar. using only one
+```{r}
+p <- ps_all %>%
+  ps_mutate(replicate = case_when(
+                                  sample_code == "C4-2-T4METAB0-2" ~ 1,
+                                  sample_code == "C4-2-T4METAB0-2TOTAL1-2" ~ 2,
+                                  sample_code == "C4-2-T4SFMETAB201-2" ~ 1,
+                                  sample_code == "C4-2-T7-Fix-SFDNA20" ~ 2,
+                                  sample_code == "C2-1-T9-Live-SFDNA0-2-1-2" ~ NA,
+                                  sample_code == "C2-1-T9-Live-TDNA-0-2-1-2" ~ NA,
+                                  sample_code == "C5-110-McClane-DNA-1" ~NA,
+                                  sample_code == "C5-140-McClane-DNA-2" ~ NA,
+                                  TRUE ~ as.numeric(replicate))) %>%
+   ps_filter(replicate == 1|replicate == 2) %>% 
+  ps_arrange(sample_code) %>%
+  comp_barplot(
+    tax_level = "class", n_taxa = 15, merge_other = FALSE,
+    label = "sample_code"
+    ) +
+    coord_flip() +
+  facet_grid(replicates_check ~., space = "free", scales = "free") +
+  ggtitle("Check replicates") +
+  theme(strip.text = element_blank())
+
+p
+
+# pdf("checks_replicates.pdf", height= 10, width=8) ; plot(p) ; dev.off()
+```
+
+### Fixed traps SA2
+Check fixed traps SA2 depth 540 m because very low Shannon diversity for both micro and total. Might be a clogged filter. Removing from samples.
+```{r}
+p <- ps_all %>%
+  ps_filter(sample == "trap_fix", cycle_name == "SA3", depth == "540") %>%
+  comp_barplot(
+    tax_level = "unique", n_taxa = 15, merge_other = FALSE,
+    label = "sample_name"
+    ) +
+    coord_flip()
+p
+# pdf("figs_microviz/checks_SA3 fixed 540m.pdf", height= 5, width=10) ; plot(p) ; dev.off()
+
+ps_all %>%
+  ps_filter(sample == "trap_fix", cycle_name == "SA3") %>%
+  ps_calc_diversity(rank = "unique", index = "shannon") %>%
+  samdat_tbl() 
+
+# compare against all of SA3 fixed traps
+p <- ps_all %>%
+  # subset_taxa(!(ASV == "asv_047_00008")) %>%
+  ps_filter(sample == "trap_fix", cycle_name == "SA3") %>%
+  comp_barplot(
+    tax_level = "unique", n_taxa = 20, merge_other = FALSE,
+    label = "sample_name"
+    ) +
+    coord_flip() +
+  facet_grid(depth ~ fraction_name, space = "free", scales = "free")
+p
+# pdf("figs_microviz/checks_SA3 fixed.pdf", height= 5, width=10) ; plot(p) ; dev.off()
+
+```
+
+
+
+
+## Subset data
+remove blank samples, checks and relevel depth
+```{r}
+# remove blank samples
+ps <-  ps_all %>%
+  ps_filter(sample != "trap_blank_fix") %>%
+  ps_filter(sample != "trap_blank_live")
+
+# remove replicate samples
+ps <- ps %>%
+  ps_dedupe(method = "random", #set.seed(1) for reproducibility
+            vars = c("replicates_check", "station_id"),
+            .message_IDs = TRUE) #using dedupe function to randomly select one replicate
+
+# Remove fixed traps SA3 540 m. Dominated by 1 ASV.
+ps <-  ps %>%
+  ps_filter(sample_name != "C5-4-T4-Fix-TDNA-0-2") %>%
+  ps_filter(sample_name != "C5-4-T7-Fix-SFDNA20")
+
+# remove CTD samples that are sampled lower than 40 m
+ps <- ps %>%
+  ps_filter(!(sample == "water_CTD" & depth >=41))
+
+
+# order depths
+ps <- ps %>% 
+  ps_mutate(depth = factor(depth, levels = unique(depth))) %>%
+  ps_mutate(depth = fct_relevel(depth, c("428", "780", "1051", "1405", "2604", "540", "500", "340","300", "200", "140", "110", "100", "70", "40", "30", "25", "20", "12", "5"))) %>%
+  ps_mutate(depth_category = factor(depth_category, levels = unique (depth_category))) %>%
+  ps_mutate(depth_category = fct_relevel(depth_category, c("6", "5", "4", "3", "2", "1")))
+
+
+# order cycles
+ps <- ps %>% 
+  ps_mutate(cycle_name = factor(cycle_name, levels = unique(cycle_name))) %>%
+  ps_mutate(cycle_name = fct_relevel(cycle_name, c("ST1", "ST2", "SA-Sc-A", "SA-Sc-B","SA1","SA2")))  %>%
+  ps_mutate(cycle_name_2 = fct_relevel(cycle_name_2, c("ST1", "ST2", "SA-Sc", "SA1","SA2"))) 
+
+# checks
+tax_table(ps) %>% head ()
+rank_names(ps)
+sample_names(ps) %>% head(10)
+
+# check samples included
+check <- data.frame(ps@sam_data) %>%
+  select(sample_name, metadata_code, substrate_description_detailed, replicate, replicates_check, date, station_id, fraction_name, depth, cycle_name, cycle_name_2, sample)
+
+
+ps <- phyloseq_validate(ps)
+
+ps
+```
+
+
+# Sample filtering
+low number of reads is from live samples.
+```{r}
+
+# total number of reads
+ps %>%
+  ps_mutate(reads = sample_sums(ps)) %>%
+  samdat_tbl() %>%
+  summarise(sum = sum(reads))
+
+# reads per sample
+ps %>%
+  ps_mutate(reads = sample_sums(ps)) %>%
+  samdat_tbl() %>%
+  ggplot(aes(x = reads)) +
+  geom_freqpoly(bins = 500) +
+  geom_rug(alpha = 0.5) +
+  scale_x_log10(labels = scales::label_number()) +
+  labs(x = "Number of classified reads", y = NULL) +
+  theme_bw()
+
+```
+
+check low abundance taxa - present in more than 1 sample and more than 100 reads out of 4093870
+```{r}
+ntaxa(ps) # before filtering 6007 ASVs
+ps_filt <- ps %>%
+  tax_filter(min_total_abundance = 11) 
+
+ntaxa(ps_filt) # 4572 ASVs
+# %>%
+#   ntaxa()
+ps
+ps_filt
+```
+
+```{r}
+# make table of summary statistics for the unique taxa
+TaxaStats <- tibble(
+  taxon = taxa_names(ps),
+  prevalence = microbiome::prevalence(ps),
+  total_abundance = taxa_sums(ps)
+)
+
+p <- TaxaStats %>%
+  ggplot(aes(total_abundance, prevalence)) +
+  geom_point(alpha = 0.5) +
+  geom_rug(alpha = 0.1) +
+  scale_x_continuous(
+    labels = scales::label_number(), name = "Total Abundance"
+  ) +
+  scale_y_continuous(
+    labels = scales::label_percent(), breaks = scales::breaks_pretty(n = 9),
+    name = "Prevalence (%)",
+    sec.axis = sec_axis(
+      trans = ~ . * nsamples(ps), breaks = scales::breaks_pretty(n = 9),
+      name = "Prevalence (N samples)"
+    )
+  ) +
+  theme_bw()
+p
+
+```
+
+zoom in on less abundant taxa
+```{r}
+TaxaStats %>%
+  ggplot(aes(x = total_abundance, y = prevalence)) +
+  geom_vline(xintercept = 10, color = "red", linetype = "dotted") +
+  geom_hline(yintercept = 1 / 100, color = "red", linetype = "dotted") +
+  geom_point(alpha = 0.5) +
+  geom_rug(alpha = 0.1) +
+  scale_x_log10(labels = scales::label_number(), name = "Total Abundance") +
+  scale_y_log10(
+    labels = scales::label_percent(), breaks = scales::breaks_log(n = 9),
+    name = "Prevalence (%)",
+    sec.axis = sec_axis(
+      trans = ~ . * nsamples(ps), breaks = scales::breaks_log(n = 9),
+      name = "Prevalence (N samples)"
+    )
+  ) +
+  theme_bw()
+```
+
+By taxonomic table
+```{r}
+ps %>%
+  tax_table() %>%
+  as.data.frame() %>%
+  as_tibble(rownames = "taxon") %>%
+  left_join(TaxaStats, by = "taxon") %>%
+  add_count(division, name = "division_count", sort = TRUE) %>%
+  mutate(division = factor(division, levels = unique(division))) %>% # to fix facet order
+  mutate(division = forcats::fct_lump_n(division, n = 5)) %>%
+  mutate(division = forcats::fct_explicit_na(division, na_level = "Other")) %>%
+  ggplot(aes(total_abundance, prevalence)) +
+  geom_vline(xintercept = 10, color = "red", linetype = "dotted") +
+  geom_hline(yintercept = 1 / 100, color = "red", linetype = "dotted") +
+  geom_point(alpha = 0.5, size = 1) +
+  geom_rug(alpha = 0.2) +
+  scale_x_log10(
+    labels = scales::label_log(), breaks = scales::breaks_log(n = 5),
+    name = "Total Abundance"
+  ) +
+  scale_y_log10(
+    labels = scales::label_percent(), breaks = scales::breaks_log(n = 9),
+    name = "Prevalence (%)",
+    sec.axis = sec_axis(
+      trans = ~ . * nsamples(ps), breaks = scales::breaks_log(n = 9),
+      name = "Prevalence (N samples)"
+    )
+  ) +
+  facet_wrap("division") +
+  theme_bw(10)
+```
+
+filter for more than 10 reads per ASV.
+```{r}
+
+ps_filt <-  ps %>%
+  tax_filter(min_total_abundance = 11) 
+
+ps_filt
+check <- as.data.frame(ps_filt@tax_table)
+```
+
+# Diversity
+From now, working with phyloseq ps, after removing duplicates.
+
+
+## Figure main - upset plot (ASV presence/absence for sample types)
+normalisations and transform to long
+```{r}
+ps_norm <- phyloseq_normalize_median(ps_filt)
+ps_long <- phyloseq_transform_to_long(ps_norm)
+
+#upset only accounts for presence/absence
+upset_df <- ps_long %>%
+  select(asv_code,sample) %>% # group by the level of classification
+  distinct() %>%
+  mutate(n=1) %>%
+  pivot_wider(names_from = sample,
+              values_fill = 0,
+              values_from = n) %>%
+  data.frame() # this part is important at the end of forming the df if not will have error later
+
+fig_upset_asv <- UpSetR::upset(upset_df, 
+                                nsets = 5,
+                                empty.intersections = "on", 
+                                nintersects = 20,
+                                # number.angles = 30, 
+                                # point.size = 10, 
+                                # line.size = 4, 
+                                mainbar.y.label = "ASV number", 
+                                sets.x.label = "ASVs", 
+                                order.by = "freq", 
+                                # text.scale = c(3), 
+                                mb.ratio = c(0.6, 0.4))
+fig_upset_asv
+```
+
+## Figure supp - Shannon diversity and richness (at ASV level)
+overall by sample
+```{r}
+p1<-ps_filt %>%
+  ps_calc_diversity(rank = "unique", index = "shannon") %>%
+  samdat_tbl() %>%
+  mutate(sample = str_replace_all(sample, c(core = "Sediment",
+                                        water_CTD = "Water - CTD",
+                                        water_pump = "Water - Pump",
+                                        trap_live = "Live trap",
+                                        trap_fix = "Fix trap"))) %>%
+  mutate(sample = fct_relevel(sample, c("Water - CTD", "Water - Pump", "Fix trap", "Live trap", "Sediment"))) %>%
+  mutate(depth_type = str_replace_all(sample, c("Sediment" = "Sediment",
+                                        "Water - CTD" = "Surface",
+                                        "Water - Pump" = "Below DCM (70 m to 500 m)",
+                                        "Live trap" = "Below DCM (70 m to 500 m)",
+                                        "Fix trap" = "Below DCM (70 m to 500 m)"))) %>%
+  mutate(depth_type = fct_relevel(depth_type, c("Surface", "Below DCM (70 m to 500 m)", "Sediment"))) %>%
+  ggplot() +
+  geom_boxplot(aes(y = shannon_unique, x = sample))+
+  # geom_jitter(aes(y = shannon_unique, x = sample, colour = cycle_name_2), width = 0.2, alpha = 0.6) +
+  scale_colour_manual(values = colours_cycle) +
+  facet_grid(.~ depth_type, scales = "free", space = "free_x") +
+  ylab("Shannon diversity") +
+  xlab("Sample type") +
+  guides(colour=guide_legend(title="Cycle"))+
+  theme(legend.position = "top") +
+  expand_limits(y = 6)
+
+p1
+
+p2<- ps_filt  %>%
+  # tax_filter(min_total_abundance = 11) %>%
+  ps_calc_richness(rank = "unique", index = "observed") %>%
+  samdat_tbl() %>%
+  mutate(sample = str_replace_all(sample, c(core = "Sediment",
+                                        water_CTD = "Water - CTD",
+                                        water_pump = "Water - Pump",
+                                        trap_live = "Live trap",
+                                        trap_fix = "Fix trap"))) %>%
+  mutate(sample = fct_relevel(sample, c("Water - CTD", "Water - Pump", "Fix trap", "Live trap", "Sediment"))) %>%
+  mutate(depth_type = str_replace_all(sample, c("Sediment" = "Sediment",
+                                        "Water - CTD" = "Surface",
+                                        "Water - Pump" = "Below DCM (70 m to 500 m)",
+                                        "Live trap" = "Below DCM (70 m to 500 m)",
+                                        "Fix trap" = "Below DCM (70 m to 500 m)"))) %>%
+  mutate(depth_type = fct_relevel(depth_type, c("Surface", "Below DCM (70 m to 500 m)", "Sediment"))) %>%
+  ggplot() +
+  geom_boxplot(aes(y = observed_unique, x = sample))+
+  # geom_violin(aes(y = observed_unique, x = sample), outlier.shape = NA) +
+  # geom_jitter(aes(y = observed_unique, x = sample, colour = cycle_name_2), width = 0.2, alpha = 0.6) +
+  scale_colour_manual(values = colours_cycle) +
+  facet_grid(.~ depth_type, scales = "free", space = "free_x") +
+  ylab("No. of ASVs") +
+  xlab("Sample type") +
+  guides(colour=guide_legend(title="Cycle"))+
+  theme(legend.position = "none")
+p2
+
+
+p <- p1|p2  + plot_annotation(tag_levels = 'A')
+p
+
+# pdf("main_shannon richness sample_boxplot.pdf", height=4, width=8) ; plot(p) ; dev.off()
+
+```
+
+
+
+## Figure supp - Shannon diversity and richness by cycle (at ASV level)
+```{r}
+
+# barplot group by sample, each bar for cycle. 
+p1<-ps_filt %>%
+  # tax_filter(min_total_abundance = 11) %>%
+  ps_calc_diversity(rank = "unique", index = "shannon") %>%
+  samdat_tbl() %>%
+  select(sample, cycle_name_2, shannon_unique)  %>%
+  group_by(sample, cycle_name_2) %>%
+  summarise(mean = mean(shannon_unique),
+            sd = sd(shannon_unique)) %>%
+  ungroup() %>%
+  mutate(cycle_name_2 = fct_relevel(cycle_name_2, c("ST1", "ST2", "SA-Sc", "SA1", "SA2"))) %>%
+  mutate(sample = fct_relevel(sample, c("water_CTD", "water_pump", "trap_fix", "trap_live", "core"))) %>%
+  ggplot(aes(x = sample, y = mean, fill = cycle_name_2)) +
+  geom_bar(stat="identity", color="black", 
+           position=position_dodge(), alpha = 0.8) +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2,
+                 position=position_dodge(.9)) +
+  scale_fill_manual(values = colours_cycle) +
+  ylab("Shannon diversity") +
+  xlab("Sample type") +
+  guides(fill=guide_legend(title="Cycle"))+
+  theme(legend.position = "top")
+
+p1
+
+# barplot group by sample, each bar for cycle. 
+p2<-ps_filt %>%
+  # tax_filter(min_total_abundance = 11) %>%
+  ps_calc_richness(rank = "unique", index = "observed") %>%
+  samdat_tbl() %>%
+  select(sample, cycle_name_2, observed_unique)  %>%
+  group_by(sample, cycle_name_2) %>%
+  summarise(mean = mean(observed_unique),
+            sd = sd(observed_unique)) %>%
+  ungroup() %>%
+  mutate(cycle_name_2 = fct_relevel(cycle_name_2, c("ST1", "ST2", "SA-Sc", "SA1", "SA2"))) %>%
+  mutate(sample = fct_relevel(sample, c("water_CTD", "water_pump", "trap_fix", "trap_live", "core"))) %>%
+  ggplot(aes(x = sample, y = mean, fill = cycle_name_2)) +
+  geom_bar(stat="identity", color="black", 
+           position=position_dodge(), alpha = 0.8) +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2,
+                 position=position_dodge(.9)) +
+  scale_fill_manual(values = colours_cycle) +
+  ylab("No. of ASVs") +
+  xlab("Sample type") +
+  guides(fill=guide_legend(title="Cycle"))+
+  theme(legend.position = "none")
+p2
+
+p <- p1|p2  + plot_annotation(tag_levels = 'A')
+p
+
+# pdf("supp_shannon richness cycle_barplot.pdf", height=4, width=8) ; plot(p) ; dev.off()
+
+```
+
+ignore - some exploratory plots
+```{r, eval = FALSE}
+# by sample and cycleq
+ps_filt  %>%
+  ps_calc_diversity(rank = "unique", index = "shannon") %>%
+  samdat_tbl() %>%
+  mutate(cycle_name_2 = fct_relevel(cycle_name_2, c("ST1", "ST2", "SA-Sc", "SA1", "SA2"))) %>%
+  ggplot() +
+  geom_boxplot(aes(x = shannon_unique, y = cycle_name_2, colour = cycle_name_2))+
+  geom_point(aes(x = shannon_unique, y = cycle_name_2, colour = cycle_name_2), position = position_jitter(height = 0.2), alpha = 0.5) +
+  scale_colour_manual(values = colours_cycle)+
+  facet_grid(sample~.)
+
+ps_filt  %>%
+  ps_calc_diversity(rank = "unique", index = "shannon") %>%
+  samdat_tbl() %>%
+  ggplot(aes(x = shannon_unique, y = cycle_name, colour = cycle_name)) +
+  geom_point(position = position_jitter(height = 0.2), alpha = 0.5) +
+  geom_boxplot()+
+  scale_colour_manual(values = colours_cycle)
+
+
+ps_filt %>%
+  ps_filter(sample %in% c("trap_fix", "trap_live", "water_pump")) %>%
+  ps_calc_diversity(rank = "unique", index = "shannon") %>%
+  samdat_tbl() %>%
+  ggplot(aes(x = shannon_unique, y = sample, colour = sample)) +
+  geom_point(position = position_jitter(height = 0.2), alpha = 0.5) +
+  geom_boxplot()+
+  # scale_colour_manual(values = colours_cycle) +
+  facet_grid(fct_relevel(depth_category, "1", "2", "3", "4")~sample)
+```
+
+## statistical tests
+at ASV level, live traps have the lowest diversity. CTD and sediment have the highest
+fixed traps and water pump have the same diversity.
+```{r}
+summary_shannon <- ps_filt %>%
+  ps_calc_diversity(rank = "unique", index = "shannon") %>%
+  samdat_tbl() %>%
+  group_by(sample) %>%
+  summarise(count = n(),
+    mean = mean(shannon_unique, na.rm = TRUE),
+    sd = sd(shannon_unique, na.rm = TRUE))
+summary_shannon
+
+table <- ps_filt %>%
+  ps_calc_diversity(rank = "unique", index = "shannon") %>%
+  samdat_tbl()
+
+hist(table$shannon_unique)
+qqnorm(table$shannon_unique)
+shapiro.test(table$shannon_unique)
+
+# not normally distributed. Use kruskal wallis test
+
+# significantly different diversity between sample type
+kruskal.test(shannon_unique~sample, data = table)
+library(FSA)  
+dunnTest(shannon_unique~sample, data = table,
+         method="bonferroni")
+
+# Per cycle
+ps_filt %>%
+  ps_calc_diversity(rank = "unique", index = "shannon") %>%
+  samdat_tbl() %>%
+  group_by(sample,cycle_name_2) %>%
+  summarise(count = n(),
+    mean = mean(shannon_unique, na.rm = TRUE),
+    sd = sd(shannon_unique, na.rm = TRUE))
+
+# not significant difference in diversity between cycles
+kruskal.test(shannon_unique~cycle_name_2, data = table)
+library(FSA)
+dunnTest(shannon_unique~cycle_name_2, data = table,
+         method="bonferroni")
+
+# library(car)
+# lm <- lm(shannon_unique~cycle_name_2, data = table)
+# Anova(lm, type = "3")
+# pairwise.t.test(table$shannon_unique, table$cycle_name_2, p.adj='bonferroni')
+
+```
+
+
+
+
+# Supp figure - Barplot of all samples
+
+## Custom colour palette - class
+```{r}
+hueRank <- "division"
+hueRankPlural <- "divisions"
+shadeRank <- "class"
+
+
+# Sort phyloseq at lower, and then higher ranks
+ps2 <- ps_filt %>%
+  tax_sort(by = sum, at = shadeRank) %>%
+  tax_sort(by = sum, at = hueRank) %>%
+  tax_agg(rank = shadeRank)
+
+# Specify number of hues and shades desired
+nHues <- 5 # "Other" phyla will be shades of grey
+nShades <- 4 # "Other" families will be the lightest shade of each hue
+
+hierarchicalPalInfo <- data.frame(
+  hue = as.vector(tt_get(ps2)[, hueRank]),
+  shade = as.vector(tt_get(ps2)[, shadeRank]),
+  counts = taxa_sums(otu_get(ps2))
+)
+
+hierarchicalPalInfo <- hierarchicalPalInfo %>%
+  dplyr::mutate(
+    hue = forcats::fct_other(
+      f = hue, keep = unique(hue)[seq_len(nHues)],
+      other_level = paste("Other", hueRankPlural)
+    ),
+    nChrHue = nchar(as.character(hue)), padHue = max(nChrHue) - nChrHue
+  ) %>%
+  dplyr::group_by(hue) %>%
+  dplyr::mutate(
+    shade = forcats::fct_other(
+      f = shade, keep = unique(shade)[seq_len(nShades - 1)],
+      other_level = "Other"
+    )
+  ) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(
+    nChrShade = nchar(as.character(shade)), padShade = max(nChrShade) - nChrShade,
+    Taxa = paste0(hue, ": ", strrep(" ", padHue), shade, strrep(" ", padShade))
+  )
+```
+
+```{r}
+hierarchicalPalMatrix <- matrix(
+  data = sapply(
+    X = seq(from = 30, to = 75, length.out = nShades),
+    FUN = function(l) scales::hue_pal(l = l, h.start = 30)(n = nHues)
+  ),
+  byrow = TRUE, ncol = nHues
+)
+hierarchicalPalMatrix <- cbind(hierarchicalPalMatrix, grey.colors(n = nShades))
+
+hierarchicalPal <- hierarchicalPalMatrix %>%
+  as.vector() %>%
+  setNames(unique(hierarchicalPalInfo$Taxa))
+```
+check taxonomic palette
+```{r}
+tax_palette_plot(hierarchicalPal) +
+  theme(axis.text.y.left = element_text(family = "mono"))
+```
+
+## core
+```{r}
+plot_core<- ps2 %>%
+  ps_get() %>%
+  tax_mutate("division: class" = hierarchicalPalInfo$Taxa, .keep = "none") %>%
+   ps_filter(sample == "core") %>% # filter after tax mutate
+  comp_barplot(
+    tax_level = "division: class", n_taxa = length(hierarchicalPal),
+    tax_order = "asis", palette = hierarchicalPal, 
+    x = "depth"
+    ) +
+  facet_grid(fct_relevel(cycle_name, "ST1", "ST2", "SA-Sc-A", "SA-Sc-B", "SA1", "SA2") ~., space = "free", scales = "free") +
+  coord_flip() +
+  theme(strip.text = element_text(face = "bold")) +
+  ggtitle("Sediment core")
+plot_core
+
+# pdf("barplot_core.pdf", height=6, width=10) ; plot(plot_core) ; dev.off()
+```
+
+
+## pump
+```{r}
+plot_pump<- ps2 %>%
+  ps_get() %>%
+  tax_mutate("division: class" = hierarchicalPalInfo$Taxa, .keep = "none") %>%
+   ps_filter(sample == "water_pump") %>% # filter after tax mutate
+  comp_barplot(
+    tax_level = "division: class", n_taxa = length(hierarchicalPal),
+    tax_order = "asis", palette = hierarchicalPal, 
+    x = "depth"
+    ) +
+  facet_grid(fct_relevel(cycle_name, "ST1", "ST2", "SA-Sc-A", "SA-Sc-B", "SA1", "SA2") ~ ., space = "free", scales = "free") +
+  coord_flip() +
+  theme(
+    # axis.ticks.y = element_blank(), 
+    strip.text = element_text(face = "bold")) +
+  ggtitle("Lower water column (McClane pump)")
+
+plot_pump
+# pdf("barplot_pump.pdf", height=6, width=10) ; plot(plot_pump) ; dev.off()
+
+```
+
+
+##  live
+```{r}
+plot_live<- ps2 %>%
+  ps_get() %>%
+  tax_mutate("division: class" = hierarchicalPalInfo$Taxa, .keep = "none") %>%
+  ps_filter(sample == "trap_live") %>% # filter after tax mutate
+  comp_barplot(
+    tax_level = "division: class", n_taxa = length(hierarchicalPal),
+    tax_order = "asis", palette = hierarchicalPal, 
+    x = "depth"
+    ) +
+  facet_grid(fct_relevel(cycle_name, "ST1", "ST2", "SA-Sc-A", "SA-Sc-B", "SA1", "SA2") ~ fraction_name
+             , space = "free", scales = "free"
+             ) +
+  coord_flip() +
+  theme(
+    # axis.ticks.y = element_blank(), 
+        strip.text = element_text(face = "bold")) +
+  ggtitle("Live traps") +
+  xlab(NULL)
+
+plot_live
+# pdf("barplot_trap live.pdf", height=6, width=10) ; plot(plot_live) ; dev.off()
+
+```
+
+
+##  fixed 
+```{r}
+plot_fix <- ps2 %>%
+  ps_get() %>%
+  tax_mutate("division: class" = hierarchicalPalInfo$Taxa, .keep = "none") %>%
+  ps_filter(sample == "trap_fix") %>% # filter after tax mutate
+  comp_barplot(
+    tax_level = "division: class", n_taxa = length(hierarchicalPal),
+    tax_order = "asis", palette = hierarchicalPal, 
+    x = "depth"
+    ) +
+  facet_grid(fct_relevel(cycle_name, "ST1", "ST2", "SA-Sc-A", "SA-Sc-B", "SA1", "SA2") ~ fraction_name,
+             space = "free", scales = "free"
+             ) +
+  coord_flip() +
+  theme(strip.text = element_text(face = "bold")) +
+  ggtitle("Fixed traps")
+
+plot_fix
+# pdf("barplot_trap fix.pdf", height=6, width=10) ; plot(plot_fix) ; dev.off()
+
+```
+
+
+
+
+##    CTD
+```{r}
+plot_ctd<- ps2 %>%
+  ps_get() %>%
+  tax_mutate("division: class" = hierarchicalPalInfo$Taxa, .keep = "none") %>%
+   ps_filter(sample == "water_CTD") %>% # filter after tax mutate
+  comp_barplot(
+    tax_level = "division: class", n_taxa = length(hierarchicalPal),
+    tax_order = "asis", palette = hierarchicalPal, 
+    x = "depth"
+    ) +
+  facet_grid(fct_relevel(cycle_station, "ST1_193", "ST1_239", "ST2_266", "ST2_316", "SA-Sc-A_24", "SA-Sc-B_108","SA1-137",  "SA1_188", "SA2-324", "SA2-371") ~ ., space = "free", scales = "free") +
+  coord_flip() +
+  theme(strip.text = element_text(face = "bold")) +
+  ggtitle("Upper water column (CTD)")
+
+plot_ctd
+# pdf("barplot_CTD.pdf", height=7, width=10) ; plot(plot_ctd) ; dev.off()
+
+```
+
+```{r}
+library(patchwork)
+p <- (plot_ctd * theme(legend.position="none") * ylab(NULL) * xlab("Depth") | 
+        plot_pump * ylab("Proportion of reads")  * xlab(NULL) | 
+        plot_core * theme(legend.position="none") * ylab(NULL) * xlab(NULL)) / 
+    (plot_fix * theme(legend.position="none")  * ylab("Proportion of reads") * xlab("Depth")| 
+      plot_live * theme(legend.position="none") * ylab(NULL) * xlab(NULL)) + 
+  plot_layout(guides = 'collect', heights = c(3, 2)) + plot_annotation(tag_levels = 'A') 
+
+p
+
+# pdf("barplot_all samples_class.pdf", height=14, width=17) ; plot(p) ; dev.off()
+
+```

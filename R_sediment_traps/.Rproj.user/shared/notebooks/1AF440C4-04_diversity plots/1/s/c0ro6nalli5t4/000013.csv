@@ -1,0 +1,8 @@
+"0","p <- p1|p2  + plot_annotation(tag_levels = 'A')"
+"0","p"
+"2","Warning:"
+"2"," [38;5;232mNo shared levels found between `names(values)` of the manual scale and the data's [32mcolour[38;5;232m values.[39m
+"
+"2","Warning:"
+"2"," [38;5;232mNo shared levels found between `names(values)` of the manual scale and the data's [32mcolour[38;5;232m values.[39m
+"

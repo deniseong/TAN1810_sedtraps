@@ -1,0 +1,5 @@
+"0","res_export <- results(diagdds,"
+"0","             contrast=c(""sample_depth_wm"", ""trap_fix_1_2_ST"", ""water_CTD_ST""),"
+"0","             cooksCutoff = FALSE"
+"0","             )"
+"0","plotMA(res_export, cex=.8)"

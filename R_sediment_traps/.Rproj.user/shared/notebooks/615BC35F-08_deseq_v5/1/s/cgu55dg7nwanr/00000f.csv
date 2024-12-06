@@ -1,0 +1,4 @@
+"0","res_transfer <- results(diagdds,"
+"0","             contrast=c(""sample_depth_wm"", ""trap_fix_3_4_SA"", ""trap_fix_1_2_SA""),"
+"0","             cooksCutoff = FALSE)"
+"0","plotMA(res_transfer, cex=.8)"

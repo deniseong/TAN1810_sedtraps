@@ -1,0 +1,8 @@
+"0",""
+"0","depth_check <- nutrients_raw %>%"
+"0","  select(cycle_name, depth) %>%"
+"0","  distinct() %>%"
+"0","  group_by(cycle_name) %>%"
+"0","  arrange(cycle_name,depth) "
+"0",""
+"0","depth_check"

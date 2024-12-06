@@ -1,0 +1,285 @@
+---
+title: "shared community checks"
+output: html_document
+date: "2024-07-02"
+---
+
+Exported community sources and sinks
+
+check for community composition of common ASVs between upper and lower water columns are classified as upper water col ASVs
+# Initialize
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(here)
+
+source(here("init_files", "init.R")) #for libraries
+source(here("init_files", "init_markdown.R")) #for markdown libraries
+source(here("init_files", "define_functions.R")) #functions to 1.transform to dataframe, 2.normalise and 3.create treemaps
+
+set.seed(1)
+
+# Subdivision palette
+divisionPalette <- readxl::read_excel("init_files/division_palette.xlsx")
+divisionPalette <- structure(divisionPalette$colour,.Names=divisionPalette$subdivision) 
+```
+
+
+
+## load data
+```{r}
+source(here("init_files", "read_data_v3.R")) #load phyloseq and modify variables
+ps_all
+source(here("init_files", "filt_samples.R")) #filter out replicates, blanks etc. 
+ps
+ps_filt <- ps %>% 
+  subset_taxa(subdivision != "Dinoflagellata")
+ps_filt
+
+
+ps_norm <- phyloseq_normalize_median(ps_filt)
+ps_long <- phyloseq_transform_to_long(ps_norm)
+```
+
+## Proportion
+```{r}
+# separate by water mass
+ps_long_common <- data.frame()
+for (i in c("ST", "SA")) {
+  
+  # filter options here - only include very surface water col - depth cat 1-3 roughly 5-30 m. And separate analysis by water mass.
+  ps_long_sub <- ps_long %>%
+    filter(sample %in% c("trap_fix", "water_CTD", "core", "water_pump")) %>%
+    # filter((sample == "water_CTD" & cycle_name_2 == "ST1" & depth <= 30) |
+    #         (sample == "water_CTD" & cycle_name_2 == "ST2" & depth <= 20) |
+    #         (sample == "water_CTD" & cycle_name_2 == "SA-Sc" & depth <= 20) |
+    #         (sample == "water_CTD" & cycle_name_2 == "SA1" & depth <= 50) |
+    #         (sample == "water_CTD" & cycle_name_2 == "SA2" & depth <= 20) |
+    #         sample == "trap_fix" | sample == "core" |sample == "water_pump") %>%
+    # filter(cycle_name_2 == i) %>%
+    filter(water_mass == i) 
+  
+  upset_df <- ps_long_sub %>%
+    select(asv_code,sample) %>% # group by the level of classification
+    distinct() %>%
+    mutate(n=1) %>%
+    pivot_wider(names_from = sample,
+                values_fill = 0,
+                values_from = n) %>%
+    data.frame() # this part is important at the end of forming the df if not will have error later
+  
+  taxa <- as.data.frame(ps_filt@tax_table) %>%
+    unique()
+  
+  # proportion of shared ASVs in each sample type
+  common_asvs <- upset_df %>%
+    mutate(shared_asvs = case_when(trap_fix ==1 & water_CTD ==1 & core ==1 & water_pump == 1 ~"surface and pump",
+                                   trap_fix ==1 & water_CTD ==1 & core ==1 & water_pump == 0 ~"surface exported",
+                                   trap_fix ==1 & water_CTD ==1 & water_pump == 1 & core==0 ~ "surface and pump",
+                                   trap_fix ==1 & water_CTD ==1 & water_pump == 0 & core==0 ~ "surface not exported",
+                                    trap_fix ==1 & water_CTD ==0 & core ==1 & water_pump == 1 ~"pump exported",
+                                    trap_fix ==1 & water_CTD ==0 & core ==0 & water_pump == 1 ~"pump not exported",
+                                    trap_fix ==1 & water_CTD ==0 & core ==0 & water_pump == 0 ~"unique",
+                                    trap_fix ==0 & water_CTD ==1 & core ==0 & water_pump == 0 ~"unique",
+                                    trap_fix ==0 & water_CTD ==0 & core ==1 & water_pump == 0 ~"unique",
+                                    trap_fix ==0 & water_CTD ==0 & core ==0 & water_pump == 1 ~"unique",
+                                    trap_fix ==0 & water_CTD ==1 & core ==0 & water_pump == 1 ~"unique",
+                                    trap_fix ==0 & water_CTD ==0 & core ==1 & water_pump == 1 ~"unique",
+                                    TRUE~ "others"))
+  ps_long_common_sub <- ps_long_sub %>%
+    full_join(common_asvs) # %>%
+    # filter(!(sample == "water_pump"))
+  
+   ps_long_common <- bind_rows(ps_long_common, ps_long_common_sub) %>%
+     filter(shared_asvs != "others") # remove the other combinations, takes up 0.9 to 3.2% of reads in the samples
+}
+
+
+check <- ps_long_common %>%
+  select(depth, cycle_name_2, sample) %>%
+  unique()
+
+```
+
+summary for results
+```{r}
+# proportion for each shared asv combination
+otu_rel_abund <- ps_long_common %>%
+    group_by(file_code) %>%
+    mutate(rel_abund = n_reads / sum(n_reads)) %>% # change reads to proportion
+    ungroup() %>%
+    select(-n_reads) %>%
+    group_by(file_code, shared_asvs) %>%
+    mutate(rel_abund = 100*sum(rel_abund)) %>% # add percent of reads for each sample combination tgt
+    select(water_mass, cycle_name_2, sample, file_code, shared_asvs, rel_abund) %>%
+    distinct() %>%
+    pivot_wider(names_from = shared_asvs,
+                values_from = rel_abund) %>% #from here is to replace any file_code with NA as 0
+    replace(., is.na(.), 0) %>%
+    pivot_longer(cols= "surface and pump":"pump exported",
+                 names_to = "shared_asvs",
+                 values_to = "rel_abund")
+
+summary <- otu_rel_abund %>%
+  group_by(sample, shared_asvs) %>%
+  summarise(mean = round(mean(rel_abund), 1),
+            sd = round(sd(rel_abund), 1)) 
+summary 
+
+```
+
+```{r}
+library(viridis)
+p1 <- ps_long_common %>%
+  mutate(sample = fct_relevel(sample, "water_CTD", "trap_fix", "core")) %>%
+  filter(shared_asvs!= "others") %>%
+  # filter(sample %in% c("trap_fix", "core")) %>%
+  # filter(shared_asvs != "unique") %>%
+  mutate(cycle_name_2 = fct_relevel(cycle_name_2, "SA2", "SA1", "SA-Sc", "ST2", "ST1")) %>%
+  # mutate(shared_asvs = fct_relevel(shared_asvs, "unique", "pump not exported", "pump exported", "surface not exported", "surface exported")) %>%
+  ggplot(aes(x=n_reads, y=cycle_name_2, color=shared_asvs, fill=shared_asvs)) + 
+        geom_bar(position="fill", stat="identity") + 
+        theme(panel.spacing.y = unit(0,"lines"),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              strip.background = element_blank(),
+              panel.border = element_rect(colour = "black", fill = NA),
+              strip.text.y.right = element_text(angle = 0))+
+        facet_grid(.~sample, scales = "free_y", space = "free")+
+        #   scale_colour_manual(values = c( "#FFFF99", "#FF9900", "#6BAED6", "#045A8D", "black"))+
+        # scale_fill_manual(values = c( "#FFFF99", "#FF9900", "#6BAED6", "#045A8D", "black")) +
+        scale_colour_manual(values = c("#777777", "#FFFF99", "#FF9900", "#6BAED6", "#045A8D", "black", "green"))+
+        scale_fill_manual(values = c("#777777", "#FFFF99", "#FF9900", "#6BAED6", "#045A8D", "black", "green")) +
+        xlab("Percent of reads")+
+        ylab("Cycle")
+p1
+
+summary <- ps_long_common %>%
+  select(domain:ASV, shared_asvs) %>%
+  unique()
+
+# pdf("shared_community_presentation_no dinos.pdf", height= 4, width=8) ; plot(p1) ; dev.off()
+
+```
+
+common asvs across all
+```{r}
+p2 <- ps_long_common %>%
+  mutate(shared_asvs = case_when(shared_asvs == "surface and pump" ~ "surface and pump",
+                                 TRUE ~ "not shared")) %>%
+  mutate(subdivision = case_when(shared_asvs == "not shared" ~ "not shared",
+                                 shared_asvs == "surface and pump" ~ subdivision
+                                 )) %>%
+  # filter(shared_asvs == "surface and pump") %>%
+  filter(sample !="core") %>%
+  mutate(sample = fct_relevel(sample, "water_CTD", "water_pump", "trap_fix")) %>%
+  # filter(sample %in% c("trap_fix", "core")) %>%
+  mutate(cycle_name_2 = fct_relevel(cycle_name_2, "SA2", "SA1", "SA-Sc", "ST2", "ST1")) %>%
+  mutate(subdivision = case_when(subdivision == "Ciliophora" ~ "Ciliophora",
+                                 subdivision == "Haptophyta_X" ~ "Haptophyta_X",
+                                 subdivision == "Bigyra" ~ "Bigyra",
+                                 subdivision == "Prasinodermophyta_X" ~ "Prasinodermophyta_X",
+                                 subdivision == "Gyrista" ~ "Gyrista",
+                                 subdivision == "Radiolaria" ~ "Radiolaria",
+                                 subdivision == "Chlorophyta_X" ~ "Chlorophyta_X",
+                                 class == "Syndiniales" ~ "Syndiniales",
+                                 class == "Dinophyceae" ~ "Dinophyceae",
+                                 subdivision == "not shared" ~ "not shared",
+                                 TRUE ~"Others")) %>%
+    mutate(subdivision = fct_relevel(subdivision, "not shared", "Others", "Bigyra", "Ciliophora", "Radiolaria", "Gyrista", "Haptophyta_X","Prasinodermophyta_X","Chlorophyta_X"
+                                     , "Syndiniales", "Dinophyceae"
+                                     )) %>%
+  # mutate(subdivision = fct_rev(fct_infreq(subdivision))) %>%
+  ggplot(aes(x=n_reads, y=cycle_name_2, color=subdivision, fill=subdivision)) + 
+        geom_bar(position="fill", stat="identity") + 
+        theme(panel.spacing.y = unit(0,"lines"),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              strip.background = element_blank(),
+              panel.border = element_rect(colour = "black", fill = NA),
+              strip.text.y.right = element_text(angle = 0))+
+        facet_grid(.~sample, scales = "free_y", space = "free")+
+        scale_color_manual(values=divisionPalette) +
+        scale_fill_manual(values=divisionPalette) +
+        xlab("Percent of reads")+
+        ylab("Cycle")+
+  ggtitle("Surface and pump")
+p2
+
+# pdf("supp_shared_test.pdf", height= 3, width=7) ; plot(p2) ; dev.off()
+
+```
+
+For dinoflagellata
+```{r}
+p3 <- ps_long_common %>%
+  mutate(shared_asvs = case_when(shared_asvs == "surface and pump" ~ "surface and pump",
+                                 TRUE ~ "not shared")) %>%
+  mutate(class = case_when(shared_asvs == "not shared" ~ "not shared",
+                           shared_asvs == "surface and pump" ~ class
+                           )) %>%
+  filter(sample !="core") %>%
+  mutate(sample = fct_relevel(sample, "water_CTD", "water_pump", "trap_fix")) %>%
+  mutate(cycle_name_2 = fct_relevel(cycle_name_2, "SA2", "SA1", "SA-Sc", "ST2", "ST1")) %>%
+  mutate(class = case_when(class == "Syndiniales" ~ "Syndiniales",
+                           class == "Dinophyceae" ~ "Dinophyceae",
+                           class == "not shared" ~ "not shared",
+                           TRUE ~"Others")) %>%
+    mutate(class = fct_relevel(class, "not shared", "Others", "Syndiniales", "Dinophyceae")) %>%
+  ggplot(aes(x=n_reads, y=cycle_name_2, color=class, fill=class)) + 
+        geom_bar(position="fill", stat="identity") + 
+        theme(panel.spacing.y = unit(0,"lines"),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              strip.background = element_blank(),
+              panel.border = element_rect(colour = "black", fill = NA),
+              strip.text.y.right = element_text(angle = 0))+
+        facet_grid(.~sample, scales = "free_y", space = "free")+
+        scale_color_manual(values=divisionPalette) +
+        scale_fill_manual(values=divisionPalette) +
+        xlab("Percent of reads")+
+        ylab("Cycle")+
+  ggtitle("Surface and pump")
+p3
+
+p <- (p2/p3) + plot_annotation(tag_levels = 'A')  & theme(plot.title=element_text(size=12)) 
+p
+pdf("supp_shared community_water col.pdf", height=6, width=8) ; plot(p) ; dev.off()
+
+```
+
+
+```{r}
+otu_rel_abund <- ps_long_common %>%
+    filter(shared_asvs %in% c("surface and pump")) %>% #options to filer for each type of shared ASV
+    group_by(file_code) %>%
+    mutate(rel_abund = n_reads / sum(n_reads)) %>%
+    ungroup() %>%
+    select(-n_reads) %>%
+    pivot_longer(cols = asv_code:ASV,
+                 names_to = "level",
+                 values_to = "taxon") 
+
+taxon_rel_abund <- otu_rel_abund %>%
+    filter(level == "class") %>% #choose level here
+    group_by(water_mass, sample, cycle_name_2, file_code, taxon) %>%
+    summarise(rel_abund = 100*sum(rel_abund)) %>%
+    pivot_wider(names_from = taxon, values_from = rel_abund) %>% #from here is to replace any file_code with NA as 0
+    replace(., is.na(.), 0) %>%
+    pivot_longer(cols= !water_mass:file_code,
+                 names_to = "taxon",
+                 values_to = "rel_abund")
+
+class_df <- ps_long %>%
+    select(division:class) %>%
+    distinct()
+
+# ## division level
+summary <- taxon_rel_abund %>%
+  group_by(sample,taxon) %>%
+  summarise(#median = median(rel_abund),
+            mean = round(mean(rel_abund), 1),
+            sd = round(sd(rel_abund), 1)) %>%
+  filter(mean !=0) %>%
+  # unite("mean_sd", mean:sd, sep = "±") %>%
+  left_join(class_df,by=c("taxon" = "class"))
+summary 
+```

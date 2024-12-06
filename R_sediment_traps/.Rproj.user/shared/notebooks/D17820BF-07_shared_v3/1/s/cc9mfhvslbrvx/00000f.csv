@@ -1,0 +1,12 @@
+"0"," summary_asv_sediment <- full_join(summary, summary2) %>%
+  select(subdivision: ""pump exported"", core) %>% # remove this for the rest of the samples unique ASV
+  mutate_all(~replace(., is.na(.), 0)) %>%
+  select(-'surface not exported') %>%
+  select(-'pump not exported') %>%
+  mutate(total = rowSums(across(where(is.numeric)))) %>%
+  filter(total !=0) %>%
+  arrange(desc(total)) %>%
+  arrange(subdivision) 
+"
+"1","[38;5;232mJoining with `by = join_by(subdivision, class)`[39m
+"

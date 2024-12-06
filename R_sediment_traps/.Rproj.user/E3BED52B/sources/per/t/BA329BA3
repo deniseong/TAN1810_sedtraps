@@ -1,0 +1,27 @@
+{
+    "id": "BA329BA3",
+    "path": "~/Documents/GitHub/Cruise-New-Zealand-TAN1810/R_sediment_traps/08_deseq_v5.Rmd",
+    "project_path": "08_deseq_v5.Rmd",
+    "type": "r_markdown",
+    "hash": "973763176",
+    "contents": "",
+    "dirty": false,
+    "created": 1721980870888.0,
+    "source_on_save": false,
+    "relative_order": 9,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "1017,11",
+        "scrollLine": "1201",
+        "docOutlineVisible": "1"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1722239785,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1731415748610,
+    "read_only": false,
+    "read_only_alternatives": []
+}

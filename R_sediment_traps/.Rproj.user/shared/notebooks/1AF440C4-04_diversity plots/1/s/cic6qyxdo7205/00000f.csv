@@ -1,0 +1,275 @@
+"0","library(here)"
+"2","here() starts at /Users/deniseong/Documents/GitHub/Cruise-New-Zealand-TAN1810/R_sediment_traps
+"
+"0","source(here(""init_files"", ""init.R"")) #for libraries"
+"2","
+Attaching package: ‘dplyr’
+
+"
+"2","The following objects are masked from ‘package:stats’:
+
+    filter, lag
+
+"
+"2","The following objects are masked from ‘package:base’:
+
+    intersect, setdiff, setequal, union
+
+"
+"2","Loading required package: permute
+"
+"2","Loading required package: lattice
+"
+"2","This is vegan 2.6-6.1
+"
+"2","
+Attaching package: ‘patchwork’
+
+"
+"2","The following object is masked from ‘package:cowplot’:
+
+    align_plots
+
+"
+"2","Registered S3 method overwritten by 'seriation':
+  method         from 
+  reorder.hclust vegan
+"
+"2","
+Attaching package: ‘seriation’
+
+"
+"2","The following object is masked from ‘package:lattice’:
+
+    panel.lines
+
+"
+"2","The following object is masked from ‘package:permute’:
+
+    permute
+
+"
+"2","
+Attaching package: ‘purrr’
+
+"
+"2","The following object is masked from ‘package:maps’:
+
+    map
+
+"
+"1","[38;5;232m[1mmicroViz version 0.12.3 - Copyright (C) 2021-2024 David Barnett[22m
+[33m![38;5;232m Website: [3m[34m<]8;;https://david-barnett.github.io/microVizhttps://david-barnett.github.io/microViz]8;;>[38;5;232m[23m
+[32m✔[38;5;232m Useful?  For citation details, run: `citation(""microViz"")`
+[31m✖[38;5;232m Silence? `suppressPackageStartupMessages(library(microViz))`[39m
+"
+"2","
+Attaching package: ‘UpSetR’
+
+"
+"2","The following object is masked from ‘package:lattice’:
+
+    histogram
+
+"
+"2","Loading required package: viridisLite
+"
+"2","
+Attaching package: ‘viridis’
+
+"
+"2","The following object is masked from ‘package:maps’:
+
+    unemp
+
+"
+"2","
+Attaching package: ‘tibbletime’
+
+"
+"2","The following object is masked from ‘package:stats’:
+
+    filter
+
+"
+"2","
+Attaching package: ‘lubridate’
+
+"
+"2","The following object is masked from ‘package:cowplot’:
+
+    stamp
+
+"
+"2","The following objects are masked from ‘package:base’:
+
+    date, intersect, setdiff, union
+
+"
+"2","Loading required package: S4Vectors
+"
+"2","Loading required package: stats4
+"
+"2","Loading required package: BiocGenerics
+"
+"2","
+Attaching package: ‘BiocGenerics’
+
+"
+"2","The following objects are masked from ‘package:lubridate’:
+
+    intersect, setdiff, union
+
+"
+"2","The following objects are masked from ‘package:dplyr’:
+
+    combine, intersect, setdiff, union
+
+"
+"2","The following objects are masked from ‘package:stats’:
+
+    IQR, mad, sd, var, xtabs
+
+"
+"2","The following objects are masked from ‘package:base’:
+
+    anyDuplicated, aperm, append, as.data.frame, basename, cbind, colnames, dirname, do.call, duplicated, eval, evalq, Filter, Find, get, grep, grepl, intersect,
+    is.unsorted, lapply, Map, mapply, match, mget, order, paste, pmax, pmax.int, pmin, pmin.int, Position, rank, rbind, Reduce, rownames, sapply, setdiff, table,
+    tapply, union, unique, unsplit, which.max, which.min
+
+"
+"2","
+Attaching package: ‘S4Vectors’
+
+"
+"2","The following objects are masked from ‘package:lubridate’:
+
+    second, second<-
+
+"
+"2","The following object is masked from ‘package:tidyr’:
+
+    expand
+
+"
+"2","The following objects are masked from ‘package:dplyr’:
+
+    first, rename
+
+"
+"2","The following object is masked from ‘package:utils’:
+
+    findMatches
+
+"
+"2","The following objects are masked from ‘package:base’:
+
+    expand.grid, I, unname
+
+"
+"2","Loading required package: IRanges
+"
+"2","
+Attaching package: ‘IRanges’
+
+"
+"2","The following object is masked from ‘package:lubridate’:
+
+    %within%
+
+"
+"2","The following object is masked from ‘package:indicspecies’:
+
+    coverage
+
+"
+"2","The following object is masked from ‘package:purrr’:
+
+    reduce
+
+"
+"2","The following object is masked from ‘package:phyloseq’:
+
+    distance
+
+"
+"2","The following object is masked from ‘package:glue’:
+
+    trim
+
+"
+"2","The following objects are masked from ‘package:dplyr’:
+
+    collapse, desc, slice
+
+"
+"2","Loading required package: GenomicRanges
+"
+"2","Loading required package: GenomeInfoDb
+"
+"2","Loading required package: SummarizedExperiment
+"
+"2","Loading required package: MatrixGenerics
+"
+"2","Loading required package: matrixStats
+"
+"2","
+Attaching package: ‘matrixStats’
+
+"
+"2","The following object is masked from ‘package:dplyr’:
+
+    count
+
+"
+"2","
+Attaching package: ‘MatrixGenerics’
+
+"
+"2","The following objects are masked from ‘package:matrixStats’:
+
+    colAlls, colAnyNAs, colAnys, colAvgsPerRowSet, colCollapse, colCounts, colCummaxs, colCummins, colCumprods, colCumsums, colDiffs, colIQRDiffs, colIQRs,
+    colLogSumExps, colMadDiffs, colMads, colMaxs, colMeans2, colMedians, colMins, colOrderStats, colProds, colQuantiles, colRanges, colRanks, colSdDiffs, colSds,
+    colSums2, colTabulates, colVarDiffs, colVars, colWeightedMads, colWeightedMeans, colWeightedMedians, colWeightedSds, colWeightedVars, rowAlls, rowAnyNAs,
+    rowAnys, rowAvgsPerColSet, rowCollapse, rowCounts, rowCummaxs, rowCummins, rowCumprods, rowCumsums, rowDiffs, rowIQRDiffs, rowIQRs, rowLogSumExps,
+    rowMadDiffs, rowMads, rowMaxs, rowMeans2, rowMedians, rowMins, rowOrderStats, rowProds, rowQuantiles, rowRanges, rowRanks, rowSdDiffs, rowSds, rowSums2,
+    rowTabulates, rowVarDiffs, rowVars, rowWeightedMads, rowWeightedMeans, rowWeightedMedians, rowWeightedSds, rowWeightedVars
+
+"
+"2","Loading required package: Biobase
+"
+"2","Welcome to Bioconductor
+
+    Vignettes contain introductory material; view with 'browseVignettes()'. To cite Bioconductor, see 'citation(""Biobase"")', and for packages
+    'citation(""pkgname"")'.
+
+"
+"2","
+Attaching package: ‘Biobase’
+
+"
+"2","The following object is masked from ‘package:MatrixGenerics’:
+
+    rowMedians
+
+"
+"2","The following objects are masked from ‘package:matrixStats’:
+
+    anyMissing, rowMedians
+
+"
+"2","The following object is masked from ‘package:phyloseq’:
+
+    sampleNames
+
+"
+"0","source(here(""init_files"", ""init_markdown.R"")) #for markdown libraries"
+"0","source(here(""init_files"", ""define_functions.R"")) #functions to 1.transform to dataframe, 2.normalise and 3.create treemaps"
+"0","# cbp1 <- c(""#999999"", ""#E69F00"", ""#56B4E9"", ""#009E73"", ""#F0E442"", ""#0072B2"", ""#D55E00"", ""#CC79A7"") #another colour-blind palette, if the previous palatte has colours that are too close together."
+"0",""
+"0",""
+"0","#Colours for cycle"
+"0","colours_cycle <- readxl::read_excel(here(""init_files"", ""colours_cycle.xlsx""))"
+"0","colours_cycle <- structure(colours_cycle$colour,.Names=colours_cycle$cycle)"
+"0",""
+"0","set.seed(1)"

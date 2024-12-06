@@ -1,0 +1,143 @@
+---
+title: "POC/PON"
+author: "Denise Ong"
+date: "2023-07-11"
+output: html_document
+---
+
+Plot for POC and PON.
+
+# Initialize
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(here)
+here() # check directory location
+
+source(here("init_files", "init.R")) #for libraries
+source(here("init_files", "init_markdown.R")) #for markdown libraries
+source(here("init_files", "define_functions.R")) #functions to 1.transform to dataframe, 2.normalise and 3.create treemaps
+
+```
+
+# Load data
+
+using sediment trap data from Moira. Checked against salp paper.
+select only SA-Sc-a in SA-Sc
+
+```{r}
+df_poc <- readxl::read_excel(here("data", "SalpPOOP - SedTrap - 04-29-20 copy.xlsx"), sheet = "Flux") %>%
+  select(Cycle:σNorg...7, depth_level) %>%
+  dplyr::rename(cycle = "Cycle",
+                depth = "Depth",
+                poc = Corg,
+                poc_sd = "σCorg...5",
+                pon = Norg,
+                pon_sd = "σNorg...7") %>%
+  # filter(cycle %in% c ("1", "2", "3", "4", "5")) %>%
+  filter(cycle %in% c ("1a", "2", "3", "4", "5")) %>%
+  # mutate_if(is.character, as.numeric) %>%
+  mutate_at(c('depth_level'), as.factor) %>%
+  mutate(depth = as.double(depth)) %>%
+  mutate(cycle_name = recode(cycle, "1a" = "SA-Sc-a",
+                                    # "1b" = "SA-Sc-b",
+                                    "2" = "SA1",
+                                    "3" = "ST1",
+                                    "4" = "ST2",
+                                    "5" = "SA2")) %>%
+  select(-cycle)
+  # mutate(cycle_name = dplyr::recode(cycle, "1" = "SA-Sc",
+  #                                   "2" = "SA1",
+  #                                   "3" = "ST1",
+  #                                   "4" = "ST2",
+  #                                   "5" = "SA2"))
+
+
+df_chl <-  readxl::read_excel(here("data", "SalpPOOP - SedTrap - 04-29-20 copy.xlsx"), sheet = "chla_phaeo") %>%
+  filter(!(is.na(mean))) %>%
+  select(Cycle...1, Depth, mean, sd) %>%
+  dplyr::rename(cycle = Cycle...1,
+                depth = Depth,
+                mean_chlph = mean,
+                sd_chlph = sd) %>%
+    mutate(cycle_name = recode(cycle, "1" = "SA-Sc-a",
+                                    # "1b" = "SA-Sc-b",
+                                    "2" = "SA1",
+                                    "3" = "ST1",
+                                    "4" = "ST2",
+                                    "5" = "SA2")) %>%
+  select(-cycle)
+
+df <- full_join(df_poc, df_chl)  
+
+  
+#set factor levels
+# df$water_mass <- factor(df$water_mass, levels = c("ST", "SA"))
+df$cycle_name <- factor(df$cycle_name, levels = c("ST1", "ST2", "SA-Sc-a", "SA1", "SA2")) 
+df<- df %>%
+  mutate_if(is.character, as.numeric) 
+
+# df <- df %>% mutate_if(is.character, as.numeric) 
+# df_sub <- df %>%
+#   select(depth_level:sd_chlph) %>%
+#   # mutate_at(c('cycle_name'), as.character) %>%
+#   arrange(depth_level, cycle_name) %>%
+#     mutate_at(c('cycle_name', 'depth_level'), as.numeric) 
+
+
+
+
+
+```
+
+
+#Plot
+
+```{r}
+
+
+p1 <- df %>%
+  ggplot()+
+  geom_errorbar(aes(x = cycle_name, ymin=poc, ymax=poc+poc_sd, fill = depth_level), width=.2, position=position_dodge(.9)) +
+  geom_bar(aes(x = cycle_name, y = poc, fill = depth_level), stat = "identity", position = position_dodge()) +
+  scale_fill_paletteer_d("tvthemes::WaterTribe")+
+  xlab(NULL) +
+  theme(legend.position = "top") +
+  ylab("POC")
+
+p1
+
+p2 <- df %>%
+  ggplot()+
+  geom_bar(aes(x = cycle_name, y = pon, fill = depth_level), stat = "identity", position = position_dodge()) +
+  geom_errorbar(aes(x = cycle_name, ymin=pon, ymax=pon+pon_sd, fill = depth_level), width=.2, position=position_dodge(.9)) +
+  scale_fill_paletteer_d("tvthemes::WaterTribe") +
+  ylab("PON") +
+  xlab(NULL) +
+  theme(legend.position = "top")
+
+p2
+
+p3 <- df %>%
+  ggplot()+
+  geom_point(aes(x = cycle_name, y = mean_chlph, shape = depth_level), size = 2) +
+  # scale_shape_manual(values=c(0, 1, 2, 9)) +
+  geom_path(aes(x = cycle_name, y = mean_chlph, linetype = depth_level))+
+  # geom_line(aes(x = cycle_name, y = mean_chlph, linetype = depth_level))+
+  ylab("Chla:Phaeo") +xlab(NULL) +
+  theme(legend.position = "top")
+p3  
+
+# line point- ignore.
+# p <- df %>%
+#   ggplot(aes(x = poc, y = depth)) +
+#   geom_point(aes(colour = cycle_name)) +
+#   geom_path(aes(colour = cycle_name))+
+#   scale_colour_manual(values = colours_cycle) +
+#   scale_y_reverse()
+# p
+
+p <- (p1 / p2/ p3) + plot_annotation(tag_levels = 'A') 
+p
+pdf("POC_PON_phaeo_v2.pdf", height= 8, width=5) ; plot(p) ; dev.off()
+
+```

@@ -1,0 +1,11 @@
+"0","# list of unique or shared ASVs between the groups
+summary <- asv_df %>%
+  # filter(ST == 1) %>%
+  group_by(group,subdivision,class) %>%
+  summarise(n=n()) %>%
+  pivot_wider(names_from = group, values_from = n, values_fill = 0) %>%
+  mutate(total = ST+SA+both) %>%
+  arrange(subdivision, desc(total))
+"
+"1","[38;5;232m`summarise()` has grouped output by 'group', 'subdivision'. You can override using the `.groups` argument.[39m
+"

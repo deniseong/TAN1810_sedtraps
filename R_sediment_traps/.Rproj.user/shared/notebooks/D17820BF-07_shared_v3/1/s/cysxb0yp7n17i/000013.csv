@@ -1,0 +1,7 @@
+"0",""
+"0","summary <- ps_long_common %>%"
+"0","  select(domain:ASV, shared_asvs) %>%"
+"0","  unique()"
+"0",""
+"0","# pdf(""shared_community_presentation_no dinos.pdf"", height= 4, width=8) ; plot(p1) ; dev.off()"
+"0",""

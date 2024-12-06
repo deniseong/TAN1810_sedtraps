@@ -1,0 +1,164 @@
+---
+title: "Map sed traps"
+author: "Denise Ong"
+date: "2023-07-17"
+output: html_document
+---
+
+Map for sediment traps. to show the path of the incubation.
+Using 2 excel sheets. SalpPOOP - SedTrap - 04-29-20 copy for the start and end date of the sediment trap deployment.
+InSitu_Array_beacons copy for the location of the ship at each day
+
+I think station 316 location is wrong. I am replacing with Long 180.187666666667 from excel All_CTDs_bottle data.
+
+```{r setup, include=FALSE}
+  knitr::opts_chunk$set(message=FALSE,
+                        warning=FALSE,
+                        cache=TRUE,
+                        tidy=FALSE)
+```
+
+```{r}
+library(here)
+library(ncdf4) # package for netcdf manipulation
+library(raster) # package for raster manipulation
+# library(rgdal) # package for geospatial analysis
+library(ggplot2) # package for plotting
+library(lattice)
+library(RColorBrewer)
+library(dplyr)
+library(tidyverse)
+library(broom)
+library(lubridate)
+library(ggOceanMaps)
+library(tibbletime)
+library(ggspatial)
+library(phyloseq)
+```
+
+#map with stations
+
+## Coordinates of stations
+```{r}
+location <- readxl::read_excel(here("data", "InSitu_Array_beacons copy.xlsx"), sheet = "data+plots") %>%
+  rename(station = 'Stn #',
+         cycle = 'Cycle #',
+         lat = Latitude,
+         long = Longitude) %>%
+  mutate(date = date(DeviceDateTime)) %>%
+  mutate(time = hour(DeviceDateTime)) %>%
+  mutate(datetime = as_datetime(DeviceDateTime)) %>%
+  mutate(cycle_name = recode(cycle, "1" = "SA-Sc",
+                                    "2" = "SA1",
+                                    "3" = "ST1",
+                                    "4" = "ST2",
+                                    "5" = "SA2"))
+
+# subset to only the dates that the sediment traps are deployed - show the path of the sed traps deployment
+SA1_a <- location %>%
+  as_tbl_time(index = datetime) %>%
+  filter_time('2018-10-24 16' ~ '2018-10-28 5') %>%
+  mutate(sed_traps = "yes")
+
+SA2 <- location %>%
+  as_tbl_time(index = datetime) %>%
+  filter_time('2018-11-02 5' ~ '2018-11-06 7') %>%
+  mutate(sed_traps = "yes")
+
+ST1 <- location %>%
+  as_tbl_time(index = datetime) %>%
+  filter_time('2018-11-07 9' ~ '2018-11-10 7')%>%
+  mutate(sed_traps = "yes")
+
+
+ST2 <- location %>%
+  as_tbl_time(index = datetime) %>%
+  filter_time('2018-11-12 7' ~ '2018-11-15 6')%>%
+  mutate(sed_traps = "yes")
+
+SA3 <- location %>%
+  as_tbl_time(index = datetime) %>%
+  filter_time('2018-11-16 6' ~ '2018-11-19 5')%>%
+  mutate(sed_traps = "yes")
+
+
+sampling_location <- list(SA1_a, SA2, SA3, ST1, ST2) 
+sampling_location <- Reduce(
+  function(x, y, ...) merge(x, y, all = TRUE, ...),
+  sampling_location
+)
+sampling_location <- sampling_location %>%
+  mutate(sample = "sed_traps")
+
+
+#location of the rest of the sample types
+source(here("init_files", "read_data_v2.R")) #load phyloseq and modify variables
+
+location_others <- data.frame(ps_all@sam_data)
+location_others <- location_others %>%
+  filter(sample %in% c("core", "water_CTD", "water_pump")) %>%
+  dplyr::select(latitude, longitude, sample, cycle_name_2, station_id) %>%
+  distinct() %>%
+  mutate(sed_traps = "no") %>%
+  rename(station = station_id,
+         cycle_name = cycle_name_2,
+         lat = latitude,
+         long = longitude) %>%
+  mutate(station = as.double(station)) %>%
+  mutate(long = case_when(station == 316 ~ 180.1876666, # I think the location listed is wrong, changing based on excel All_CTDs_bottle data
+                          TRUE ~ as.numeric(long)))
+
+location_all <- full_join(sampling_location, location_others) %>%
+  filter(sed_traps == "yes") # only sediment traps 
+```
+
+# map coordinates
+```{r}
+
+p <- basemap(limits = c(172, -179.5, -46, -42), rotate = TRUE,  
+             lon.interval = 2, lat.interval = 1, grid.size = 0.5, 
+             bathymetry = TRUE, bathy.style = "rcg", 
+             land.col = "#eeeac4") + 
+  geom_spatial_point(data = location_all, aes(x = long, y = lat, shape = sed_traps, size = sed_traps)) +
+  scale_shape_manual(values = c(19)) +
+  scale_size_manual(values = c(0.2))
+
+p
+
+
+p <- basemap(limits = c(172, -179.5, -46, -42), rotate = TRUE,  
+             lon.interval = 2, lat.interval = 1, grid.size = 0.5, 
+             bathymetry = TRUE, bathy.style = "rcg", 
+             land.col = "#eeeac4") + 
+  geom_spatial_point(data = sampling_location, aes(x = long, y = lat), size = 0.2, shape = 19)
+
+p
+
+
+# p <- basemap(limits = c(172, -179.5, -46, -42), rotate = TRUE,  
+#              lon.interval = 2, lat.interval = 1, grid.size = 0.5, 
+#              bathymetry = TRUE, bathy.style = "rcg", 
+#              land.col = "#eeeac4") + 
+#   geom_spatial_point(data = location_all, aes(x = long, y = lat, shape = sed_traps, size = sed_traps)) +
+#   scale_shape_manual(values = c(10, 19)) +
+#   scale_size_manual(values = c(1, 0.2))
+# 
+# p
+
+ pdf("sed traps_map_bathy6.pdf", height=5, width=7) ; plot(p) ; dev.off()
+ 
+#ignore - the updated version of ggoceanmaps already has higher quality bathy map
+ # to get better resolution for bathemetry file
+#  rb <- raster_bathymetry(bathy = "data/ETOPO1_Ice_g_gmt4.grd",
+#                         depths = c(50, 100, 200, 300, 500, 1000, 1500, 2000, 3000, 4000, 5000, 6000), 
+#                         proj.out = "EPSG:32636", 
+#                         boundary =  c(172, -179, -46, -41.5)
+# )
+# 
+# class(rb)
+# names(rb)
+# raster::plot(rb$raster)
+# 
+# bs_bathy <- vector_bathymetry(rb, smooth = TRUE)
+# sp::plot(bs_bathy)
+```

@@ -1,0 +1,7 @@
+"0","# check volcano plots before filtering ASVs"
+"0","EnhancedVolcano(res_transfer,"
+"0","    lab = rownames(res_transfer),"
+"0","    x = 'log2FoldChange',"
+"0","    y = 'pvalue',"
+"0","    pCutoff = 0.05,"
+"0","    FCcutoff = 0.5)"

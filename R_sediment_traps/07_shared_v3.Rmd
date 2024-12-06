@@ -1,0 +1,739 @@
+---
+title: "Shared community V3"
+author: "Denise Ong"
+date: "2024-04-15"
+output: html_document
+---
+Comparisons between sample types
+
+1. Surface vs lower water column, fixed traps and sediment - proportion of reads plot and ASV richness table. Separate between ST and SA only between proportion of reads. 
+
+separating pump exported and not exported
+
+2. Fixed vs live based on ASV presence absence - ASV richness table
+
+# Initialize
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(here)
+
+source(here("init_files", "init.R")) #for libraries
+source(here("init_files", "init_markdown.R")) #for markdown libraries
+source(here("init_files", "define_functions.R")) #functions to 1.transform to dataframe, 2.normalise and 3.create treemaps
+
+set.seed(1)
+
+# Subdivision palette
+divisionPalette <- readxl::read_excel("init_files/division_palette.xlsx")
+divisionPalette <- structure(divisionPalette$colour,.Names=divisionPalette$subdivision) 
+```
+
+# 1. Exported community sources and sinks
+
+Final options:
+
+- separate by water mass
+- separate analysis for dinos.
+
+## load data
+```{r}
+source(here("init_files", "read_data_v3.R")) #load phyloseq and modify variables
+ps_all
+source(here("init_files", "filt_samples.R")) #filter out replicates, blanks etc. 
+ps
+ps_filt <- ps %>% 
+  subset_taxa(subdivision != "Dinoflagellata") # edit here based on the analysis conducted
+ps_filt
+
+
+ps_norm <- phyloseq_normalize_median(ps_filt)
+ps_long <- phyloseq_transform_to_long(ps_norm)
+```
+
+## assign ASVs
+```{r}
+# separate by water mass
+ps_long_common <- data.frame()
+for (i in c("ST", "SA")) {
+  
+  # filter options here - only include very surface water col - depth cat 1-3 roughly 5-30 m. And separate analysis by water mass.
+  ps_long_sub <- ps_long %>%
+    filter(sample %in% c("trap_fix", "water_CTD", "core", "water_pump")) %>%
+    filter(water_mass == i) 
+  
+  upset_df <- ps_long_sub %>%
+    select(asv_code,sample) %>% # group by the level of classification
+    distinct() %>%
+    mutate(n=1) %>%
+    pivot_wider(names_from = sample,
+                values_fill = 0,
+                values_from = n) %>%
+    data.frame() # this part is important at the end of forming the df if not will have error later
+  
+  taxa <- as.data.frame(ps_filt@tax_table) %>%
+    unique()
+  
+  # proportion of shared ASVs in each sample type
+  common_asvs <- upset_df %>%
+    mutate(shared_asvs = case_when(trap_fix ==1 & water_CTD ==1 & core ==1 & water_pump == 1 ~"surface exported",
+                                   trap_fix ==1 & water_CTD ==1 & core ==1 & water_pump == 0 ~"surface exported",
+                                   trap_fix ==1 & water_CTD ==1 & water_pump == 1 & core==0 ~ "surface not exported",
+                                   trap_fix ==1 & water_CTD ==1 & water_pump == 0 & core==0 ~ "surface not exported",
+                                    trap_fix ==1 & water_CTD ==0 & core ==1 & water_pump == 1 ~"pump exported",
+                                    trap_fix ==1 & water_CTD ==0 & core ==0 & water_pump == 1 ~"pump not exported",
+                                    trap_fix ==1 & water_CTD ==0 & core ==0 & water_pump == 0 ~"unique",
+                                    trap_fix ==0 & water_CTD ==1 & core ==0 & water_pump == 0 ~"unique",
+                                    trap_fix ==0 & water_CTD ==0 & core ==1 & water_pump == 0 ~"unique",
+                                    trap_fix ==0 & water_CTD ==0 & core ==0 & water_pump == 1 ~"unique",
+                                    trap_fix ==0 & water_CTD ==1 & core ==0 & water_pump == 1 ~"unique",
+                                    trap_fix ==0 & water_CTD ==0 & core ==1 & water_pump == 1 ~"unique",
+                                    TRUE~ "others"))
+  ps_long_common_sub <- ps_long_sub %>%
+    full_join(common_asvs) # %>%
+    # filter(!(sample == "water_pump"))
+  
+   ps_long_common <- bind_rows(ps_long_common, ps_long_common_sub) %>%
+     filter(shared_asvs != "others") # remove the other combinations, takes up 0.9 to 3.2% of reads in the samples
+}
+
+
+check <- ps_long_common %>%
+  select(depth, cycle_name_2, sample) %>%
+  unique()
+
+```
+
+## checks
+### Visualise community as a whole
+not using as a main plot, only for checking the community
+```{r,eval=FALSE}
+p <- ps_long_common %>%
+  mutate(shared_asvs = case_when(
+                                 # shared_asvs == "surface not exported" ~ "surface not exported",
+                                 # shared_asvs == "pump not exported" ~ "pump not exported",
+                                 shared_asvs == "surface exported" ~ "surface exported",
+                                 # shared_asvs == "pump exported" ~ "pump exported",
+                                 TRUE ~ "not shared")) %>%
+  mutate(subdivision = case_when(shared_asvs == "not shared" ~ "not shared",
+                                 shared_asvs == "surface exported" ~ subdivision,
+                                 # shared_asvs == "pump exported" ~ subdivision
+                                 # shared_asvs == "surface not exported" ~ subdivision,
+                                 # shared_asvs == "pump not exported" ~ subdivision
+                                 )) %>%
+  # filter(shared_asvs == "surface and pump") %>%
+  # filter(sample !="core") %>%
+  mutate(sample = fct_relevel(sample, "water_CTD", "water_pump", "trap_fix", "core")) %>%
+  # filter(sample %in% c("trap_fix", "core")) %>%
+  mutate(cycle_name_2 = fct_relevel(cycle_name_2, "SA2", "SA1", "SA-Sc", "ST2", "ST1")) %>%
+  mutate(subdivision = case_when(subdivision == "Ciliophora" ~ "Ciliophora",
+                                 subdivision == "Haptophyta_X" ~ "Haptophyta_X",
+                                 subdivision == "Bigyra" ~ "Bigyra",
+                                 subdivision == "Prasinodermophyta_X" ~ "Prasinodermophyta_X",
+                                 subdivision == "Gyrista" ~ "Gyrista",
+                                 subdivision == "Radiolaria" ~ "Radiolaria",
+                                 subdivision == "Chlorophyta_X" ~ "Chlorophyta_X",
+                                 class == "Syndiniales" ~ "Syndiniales",
+                                 class == "Dinophyceae" ~ "Dinophyceae",
+                                 subdivision == "not shared" ~ "not shared",
+                                 TRUE ~"Others")) %>%
+    mutate(subdivision = fct_relevel(subdivision, "not shared", "Others", "Bigyra", "Ciliophora", "Radiolaria", "Gyrista", "Haptophyta_X","Prasinodermophyta_X","Chlorophyta_X"
+                                     , "Syndiniales", "Dinophyceae"
+                                     )) %>%
+  # mutate(subdivision = fct_rev(fct_infreq(subdivision))) %>%
+  ggplot(aes(x=n_reads, y=cycle_name_2, color=subdivision, fill=subdivision)) + 
+        geom_bar(position="fill", stat="identity") + 
+        theme(panel.spacing.y = unit(0,"lines"),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              strip.background = element_blank(),
+              panel.border = element_rect(colour = "black", fill = NA),
+              strip.text.y.right = element_text(angle = 0))+
+        facet_grid(.~sample, scales = "free_y", space = "free")+
+        scale_color_manual(values=divisionPalette) +
+        scale_fill_manual(values=divisionPalette) +
+        xlab("Percent of reads")+
+        ylab("Cycle")+
+  ggtitle("Surface and pump sources exported to the sediments")
+p
+
+# pdf("supp_shared_test.pdf", height= 3, width=7) ; plot(p2) ; dev.off()
+
+```
+For dinoflagellata
+```{r}
+
+p3 <- ps_long_common %>%
+  mutate(shared_asvs = case_when(
+                                 # shared_asvs == "surface not exported" ~ "surface not exported",
+                                 # shared_asvs == "pump not exported" ~ "pump not exported",
+                                 shared_asvs == "surface exported" ~ "surface exported",
+                                 shared_asvs == "pump exported" ~ "pump exported",
+                                 TRUE ~ "not shared")) %>%
+  mutate(class = case_when(shared_asvs == "not shared" ~ "not shared",
+                                 shared_asvs == "surface exported" ~ class,
+                                 shared_asvs == "pump exported" ~ class
+                                 # shared_asvs == "surface not exported" ~ class,
+                                 # shared_asvs == "pump not exported" ~ class
+                                 )) %>%
+  mutate(sample = fct_relevel(sample, "water_CTD", "water_pump", "trap_fix")) %>%
+  mutate(cycle_name_2 = fct_relevel(cycle_name_2, "SA2", "SA1", "SA-Sc", "ST2", "ST1")) %>%
+  mutate(class = case_when(class == "Syndiniales" ~ "Syndiniales",
+                           class == "Dinophyceae" ~ "Dinophyceae",
+                           class == "not shared" ~ "not shared",
+                           TRUE ~"Others")) %>%
+    mutate(class = fct_relevel(class, "not shared", "Others", "Syndiniales", "Dinophyceae")) %>%
+  ggplot(aes(x=n_reads, y=cycle_name_2, color=class, fill=class)) + 
+        geom_bar(position="fill", stat="identity") + 
+        theme(panel.spacing.y = unit(0,"lines"),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              strip.background = element_blank(),
+              panel.border = element_rect(colour = "black", fill = NA),
+              strip.text.y.right = element_text(angle = 0))+
+        facet_grid(.~sample, scales = "free_y", space = "free")+
+        scale_color_manual(values=divisionPalette) +
+        scale_fill_manual(values=divisionPalette) +
+        xlab("Percent of reads")+
+        ylab("Cycle")+
+  ggtitle("Surface and pump")
+p3
+
+```
+
+
+### summary for results
+```{r}
+# proportion for each shared asv combination
+otu_rel_abund <- ps_long_common %>%
+    group_by(file_code) %>%
+    mutate(rel_abund = n_reads / sum(n_reads)) %>% # change reads to proportion
+    ungroup() %>%
+    select(-n_reads) %>%
+    group_by(file_code, shared_asvs) %>%
+    mutate(rel_abund = 100*sum(rel_abund)) %>% # add percent of reads for each sample combination tgt
+    select(water_mass, cycle_name_2, sample, file_code, shared_asvs, rel_abund) %>%
+    distinct() %>%
+    pivot_wider(names_from = shared_asvs,
+                values_from = rel_abund) %>% #from here is to replace any file_code with NA as 0
+    replace(., is.na(.), 0) %>%
+    pivot_longer(cols= "surface exported":"pump exported",
+                 names_to = "shared_asvs",
+                 values_to = "rel_abund")
+
+summary <- otu_rel_abund %>%
+  group_by(sample, shared_asvs) %>%
+  summarise(mean = round(mean(rel_abund), 1),
+            sd = round(sd(rel_abund), 1)) #%>%
+  # filter(mean !=0) %>%
+  # unite("mean_sd", mean:sd, sep = "±") 
+summary 
+
+```
+
+```{r}
+#rel abund compare between upper and lower water column ASVs in traps
+otu_rel_abund <- ps_long_common %>%
+  # filter(shared_asvs %in% c("unique")) %>% #options to filer for each type of shared ASV
+    group_by(file_code) %>%
+    mutate(rel_abund = n_reads / sum(n_reads)) %>%
+    ungroup() %>%
+    select(-n_reads) %>%
+    pivot_longer(cols = asv_code:ASV,
+                 names_to = "level",
+                 values_to = "taxon") 
+
+taxon_rel_abund <- otu_rel_abund %>%
+    filter(level == "class") %>% #choose level here
+    group_by(water_mass, sample, cycle_name_2, file_code, shared_asvs, taxon) %>%
+    summarise(rel_abund = 100*sum(rel_abund)) %>%
+    pivot_wider(names_from = taxon, values_from = rel_abund) %>% #from here is to replace any file_code with NA as 0
+    replace(., is.na(.), 0) %>%
+    pivot_longer(cols= !water_mass:shared_asvs,
+                 names_to = "taxon",
+                 values_to = "rel_abund")
+
+class_df <- ps_long %>%
+    select(division:class) %>%
+    distinct()
+
+# ## division level
+summary <- taxon_rel_abund %>%
+    # filter(cycle_name_2 == "SA2") %>%
+  group_by(sample,shared_asvs,taxon) %>%
+  summarise(#median = median(rel_abund),
+            mean = round(mean(rel_abund), 1),
+            sd = round(sd(rel_abund), 1)) %>%
+  filter(mean !=0)  %>%
+  # unite("mean_sd", mean:sd, sep = "±") %>%
+  left_join(class_df,by=c("taxon" = "class"))
+summary
+```
+
+```{r}
+# proportion of each taxa
+otu_rel_abund <- ps_long_common %>%
+  # filter(shared_asvs %in% c("all", "water and trap")) %>% #options to filer for each type of shared ASV
+    group_by(file_code) %>%
+    mutate(rel_abund = n_reads / sum(n_reads)) %>%
+    ungroup() %>%
+    select(-n_reads) %>%
+    pivot_longer(cols = asv_code:ASV,
+                 names_to = "level",
+                 values_to = "taxon") 
+
+taxon_rel_abund <- otu_rel_abund %>%
+    filter(level == "subdivision") %>% #choose level here
+    group_by(water_mass, sample, cycle_name_2, file_code, taxon) %>%
+    summarise(rel_abund = 100*sum(rel_abund)) %>%
+    pivot_wider(names_from = taxon, values_from = rel_abund) %>% #from here is to replace any file_code with NA as 0
+    replace(., is.na(.), 0) %>%
+    pivot_longer(cols= !water_mass:file_code,
+                 names_to = "taxon",
+                 values_to = "rel_abund")
+
+class_df <- ps_long %>%
+    select(division:subdivision) %>%
+    distinct()
+
+# ## division level
+summary <- taxon_rel_abund %>%
+    # filter(cycle_name_2 == "SA2") %>%
+  group_by(sample,water_mass,taxon) %>%
+  summarise(#median = median(rel_abund),
+            mean = round(mean(rel_abund), 1),
+            sd = round(sd(rel_abund), 1)) %>%
+  filter(mean !=0) #%>%
+  # unite("mean_sd", mean:sd, sep = "±") %>%
+  # left_join(class_df,by=c("taxon" = "class"))
+summary 
+```
+
+
+## Plots
+```{r}
+library(viridis)
+p1 <- ps_long_common %>%
+  mutate(sample = fct_relevel(sample, "water_CTD", "trap_fix", "core")) %>%
+  filter(sample %in% c("trap_fix", "core")) %>%
+  mutate(cycle_name_2 = fct_relevel(cycle_name_2, "SA2", "SA1", "SA-Sc", "ST2", "ST1")) %>%
+  mutate(shared_asvs = fct_relevel(shared_asvs, "unique", "pump not exported", "pump exported", "surface not exported", "surface exported")) %>%
+  ggplot(aes(x=n_reads, y=cycle_name_2, color=shared_asvs, fill=shared_asvs)) + 
+        geom_bar(position="fill", stat="identity") + 
+        theme(panel.spacing.y = unit(0,"lines"),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              strip.background = element_blank(),
+              panel.border = element_rect(colour = "black", fill = NA),
+              strip.text.y.right = element_text(angle = 0))+
+        facet_grid(.~sample, scales = "free_y", space = "free")+
+        #   scale_colour_manual(values = c( "#FFFF99", "#FF9900", "#6BAED6", "#045A8D", "black"))+
+        # scale_fill_manual(values = c( "#FFFF99", "#FF9900", "#6BAED6", "#045A8D", "black")) +
+        scale_colour_manual(values = c("#777777", "#FFFF99", "#FF9900", "#6BAED6", "#045A8D", "black"))+
+        scale_fill_manual(values = c("#777777", "#FFFF99", "#FF9900", "#6BAED6", "#045A8D", "black")) +
+        xlab("Percent of reads")+
+        ylab("Cycle")
+p1
+
+summary <- ps_long_common %>%
+  select(domain:ASV, shared_asvs) %>%
+  unique()
+
+# pdf("shared_community_presentation_no dinos.pdf", height= 4, width=8) ; plot(p1) ; dev.off()
+
+```
+
+### Supplementary figure - shared ASVs by depth
+checks for depth category
+```{r}
+library(viridis)
+p6 <- ps_long_common %>%
+  mutate(sample = fct_relevel(sample, "water_CTD", "trap_fix", "core")) %>%
+  filter(sample %in% c("trap_fix")) %>%
+  mutate(cycle_name_2 = fct_relevel(cycle_name_2, "ST1", "ST2", "SA-Sc", "SA1", "SA2")) %>%
+  mutate(shared_asvs = fct_relevel(shared_asvs, "unique", "pump not exported", "pump exported", "surface not exported", "surface exported")) %>%
+  ggplot(aes(x=n_reads, y=depth_category, color=shared_asvs, fill=shared_asvs)) + 
+        geom_bar(position="fill", stat="identity") + 
+        theme(panel.spacing.y = unit(0,"lines"),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              strip.background = element_blank(),
+              panel.border = element_rect(colour = "black", fill = NA),
+              strip.text.y.right = element_text(angle = 0))+
+        facet_grid(.~cycle_name_2, scales = "free_y", space = "free")+
+        scale_colour_manual(values = c("#777777", "#FFFF99", "#FF9900", "#6BAED6", "#045A8D", "black"))+
+        scale_fill_manual(values = c("#777777", "#FFFF99", "#FF9900", "#6BAED6", "#045A8D", "black")) +
+        xlab("Percent of reads")+
+        ylab("Depth category") +
+        ggtitle("Protist ASVs excluding Dinoflagellata")
+p6
+
+p <- p6/p7  + plot_annotation(tag_levels = 'A')  + plot_layout(guides = 'collect') & theme(plot.title=element_text(size=12))
+p
+pdf("supp_common asvs_depth.pdf", height= 5, width=9) ; plot(p) ; dev.off()
+
+```
+common asvs across all
+```{r}
+p2 <- ps_long_common %>%
+  filter(shared_asvs == "surface exported") %>%
+  # filter(sample !="water_CTD") %>%
+  mutate(sample = fct_relevel(sample, "water_CTD", "trap_fix", "core")) %>%
+  filter(sample %in% c("trap_fix", "core")) %>%
+  mutate(cycle_name_2 = fct_relevel(cycle_name_2, "SA2", "SA1", "SA-Sc", "ST2", "ST1")) %>%
+  mutate(subdivision = case_when(subdivision == "Ciliophora" ~ "Ciliophora",
+                                 subdivision == "Haptophyta_X" ~ "Haptophyta_X",
+                                 subdivision == "Bigyra" ~ "Bigyra",
+                                 subdivision == "Prasinodermophyta_X" ~ "Prasinodermophyta_X",
+                                 subdivision == "Gyrista" ~ "Gyrista",
+                                 subdivision == "Radiolaria" ~ "Radiolaria",
+                                 subdivision == "Chlorophyta_X" ~ "Chlorophyta_X",
+                                 class == "Syndiniales" ~ "Syndiniales",
+                                 class == "Dinophyceae" ~ "Dinophyceae",
+                                 TRUE ~"Others")) %>%
+    mutate(subdivision = fct_relevel(subdivision, "Others", "Bigyra", "Ciliophora", "Radiolaria", "Gyrista", "Haptophyta_X", "Prasinodermophyta_X", "Chlorophyta_X", "Syndiniales", "Dinophyceae")) %>%
+  ggplot(aes(x=n_reads, y=cycle_name_2, color=subdivision, fill=subdivision)) + 
+        geom_bar(position="fill", stat="identity") + 
+        theme(panel.spacing.y = unit(0,"lines"),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              strip.background = element_blank(),
+              panel.border = element_rect(colour = "black", fill = NA),
+              strip.text.y.right = element_text(angle = 0)#,
+              # legend.position = "none"
+              )+
+        facet_grid(.~sample, scales = "free_y", space = "free") +
+        scale_color_manual(values=divisionPalette) +
+        scale_fill_manual(values=divisionPalette) +
+        xlab("Percent of reads")+
+        ylab("Cycle")+
+  ggtitle("Upp. exported")
+p2
+# pdf("presentation_exported.pdf", height= 4, width=6.5) ; plot(p2) ; dev.off()
+
+```
+
+what is not detected in the sediment
+```{r}
+p3 <- ps_long_common %>%
+  filter(shared_asvs == "surface not exported") %>%
+  # filter(sample != "water_CTD") %>%
+  mutate(cycle_name_2 = fct_relevel(cycle_name_2, "SA2", "SA1", "SA-Sc", "ST2", "ST1")) %>%
+  filter(sample %in% c("trap_fix")) %>%
+  mutate(sample = fct_relevel(sample, "water_CTD", "trap_fix", "core")) %>%
+    mutate(subdivision = case_when(subdivision == "Ciliophora" ~ "Ciliophora",
+                                 subdivision == "Haptophyta_X" ~ "Haptophyta_X",
+                                 subdivision == "Bigyra" ~ "Bigyra",
+                                 subdivision == "Prasinodermophyta_X" ~ "Prasinodermophyta_X",
+                                 subdivision == "Gyrista" ~ "Gyrista",
+                                 subdivision == "Radiolaria" ~ "Radiolaria",
+                                 subdivision == "Chlorophyta_X" ~ "Chlorophyta_X",
+                                 class == "Syndiniales" ~ "Syndiniales",
+                                 class == "Dinophyceae" ~ "Dinophyceae",
+                                 TRUE ~"Others")) %>%
+    mutate(subdivision = fct_relevel(subdivision, "Others", "Bigyra", "Ciliophora", "Radiolaria", "Gyrista", "Haptophyta_X", "Prasinodermophyta_X", "Chlorophyta_X", "Syndiniales", "Dinophyceae")) %>%
+  
+  mutate(subdivision = case_when(subdivision == "Ciliophora" ~ "Ciliophora",
+                                 subdivision == "Gyrista" ~ "Gyrista",
+                                 subdivision == "Radiolaria" ~ "Radiolaria",
+                                 class == "Syndiniales" ~ "Syndiniales",
+                                 class == "Dinophyceae" ~ "Dinophyceae",
+                                 TRUE~"Others"))%>%
+  mutate(subdivision = fct_relevel(subdivision, "Others", "Gyrista", "Radiolaria", "Ciliophora", "Syndiniales", "Dinophyceae")) %>%
+  ggplot(aes(x=n_reads, y=cycle_name_2, color=subdivision, fill=subdivision)) + 
+        geom_bar(position="fill", stat="identity") + 
+        theme(panel.spacing.y = unit(0,"lines"),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              strip.background = element_blank(),
+              panel.border = element_rect(colour = "black", fill = NA),
+              strip.text.y.right = element_text(angle = 0),
+              legend.position = "none"
+              )+
+        facet_grid(.~sample, scales = "free_y", space = "free") +
+        scale_color_manual(values=divisionPalette) + 
+        scale_fill_manual(values=divisionPalette) +
+        xlab("Percent of reads")+
+        ylab("Cycle") +
+  ggtitle("Upp. not exported")
+p3
+
+# pdf("presentation_not exported.pdf", height= 4, width=4.5) ; plot(p3) ; dev.off()
+
+```
+
+what is exported from the lower water column
+```{r}
+p4 <- ps_long_common %>%
+  filter(shared_asvs == "pump exported") %>%
+  filter(sample != "water_pump") %>%
+  mutate(cycle_name_2 = fct_relevel(cycle_name_2, "SA2", "SA1", "SA-Sc", "ST2", "ST1")) %>%
+  mutate(sample = fct_relevel(sample, "trap_fix", "core")) %>%
+  mutate(subdivision = case_when(subdivision == "Ciliophora" ~ "Ciliophora",
+                                 subdivision == "Gyrista" ~ "Gyrista",
+                                 subdivision == "Radiolaria" ~ "Radiolaria",
+                                 subdivision == "Bigyra" ~ "Bigyra",
+                                 subdivision == "Cercozoa" ~ "Cercozoa",
+                                 class == "Syndiniales" ~ "Syndiniales",
+                                 class == "Dinophyceae" ~ "Dinophyceae",
+                                 TRUE~"Others"))%>%
+  mutate(subdivision = fct_relevel(subdivision, "Others", "Bigyra", "Ciliophora", "Radiolaria","Cercozoa", "Gyrista", "Syndiniales", "Dinophyceae")) %>%
+  ggplot(aes(x=n_reads, y=cycle_name_2, color=subdivision, fill=subdivision)) + 
+        geom_bar(position="fill", stat="identity") + 
+        theme(panel.spacing.y = unit(0,"lines"),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              strip.background = element_blank(),
+              panel.border = element_rect(colour = "black", fill = NA),
+              strip.text.y.right = element_text(angle = 0),
+              # legend.position = "none"
+              )+
+        facet_grid(.~sample, scales = "free_y", space = "free")+
+        scale_color_manual(values=divisionPalette) + 
+        scale_fill_manual(values=divisionPalette) +
+        xlab("Percent of reads")+
+        ylab("Cycle")+
+  ggtitle("Lower exported")
+p4
+
+# pdf("presentation_not exported.pdf", height= 4, width=4.5) ; plot(p3) ; dev.off()
+
+```
+what is not exported from the lower water column
+```{r}
+p5 <- ps_long_common %>%
+  filter(shared_asvs == "pump not exported") %>%
+  filter(sample != "water_pump") %>%
+  mutate(cycle_name_2 = fct_relevel(cycle_name_2, "SA2", "SA1", "SA-Sc", "ST2", "ST1")) %>%
+  mutate(sample = fct_relevel(sample, "water_pump", "trap_fix", "core")) %>%
+  mutate(subdivision = case_when(subdivision == "Ciliophora" ~ "Ciliophora",
+                                 subdivision == "Gyrista" ~ "Gyrista",
+                                 subdivision == "Radiolaria" ~ "Radiolaria",
+                                 subdivision == "Bigyra" ~ "Bigyra",
+                                 subdivision == "Cercozoa" ~ "Cercozoa",
+                                 class == "Syndiniales" ~ "Syndiniales",
+                                 class == "Dinophyceae" ~ "Dinophyceae",
+                                 TRUE~"Others"))%>%
+  mutate(subdivision = fct_relevel(subdivision, "Others", "Bigyra", "Ciliophora", "Radiolaria","Cercozoa", "Gyrista", "Syndiniales", "Dinophyceae"))  %>%
+  ggplot(aes(x=n_reads, y=cycle_name_2, color=subdivision, fill=subdivision)) + 
+        geom_bar(position="fill", stat="identity") + 
+        theme(panel.spacing.y = unit(0,"lines"),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              strip.background = element_blank(),
+              panel.border = element_rect(colour = "black", fill = NA),
+              strip.text.y.right = element_text(angle = 0),
+              legend.position = "none"
+              )+
+        facet_grid(.~sample, scales = "free_y", space = "free")+
+        scale_color_manual(values=divisionPalette) + 
+        scale_fill_manual(values=divisionPalette) +
+        xlab("Percent of reads")+
+        ylab("Cycle")+
+  ggtitle("Lower not exported")
+p5
+
+# pdf("presentation_not exported.pdf", height= 4, width=4.5) ; plot(p3) ; dev.off()
+
+```
+
+### Main fig 6
+```{r}
+#main
+j1 <- (p2|p3) + plot_annotation(tag_levels = 'A') + plot_layout(widths = c(2, 1)) + plot_layout(guides = 'collect') & theme(plot.title=element_text(size=12)) 
+p <- p1/j1 + plot_annotation(tag_levels = 'A')  & theme(plot.title=element_text(size=12)) 
+p
+
+pdf("shared_community_v4_main.pdf", height=6, width=10) ; plot(p) ; dev.off()
+
+```
+
+### Supplementary figs
+```{r}
+#supp
+p <- (p4|p5) + plot_annotation(tag_levels = 'A') + plot_layout(widths = c(2, 1)) + plot_layout(guides = 'collect') & theme(plot.title=element_text(size=12)) 
+p
+
+pdf("shared_community_v4_supp.pdf", height=3, width=9) ; plot(p) ; dev.off()
+
+
+#dino
+j1 <- (p2|p3) + plot_annotation(tag_levels = 'A') + plot_layout(widths = c(2, 1)) + plot_layout(guides = 'collect') & theme(plot.title=element_text(size=12)) 
+j2 <- (p4|p5)+ plot_annotation(tag_levels = 'A') + plot_layout(widths = c(2, 1)) + plot_layout(guides = 'collect') & theme(plot.title=element_text(size=12)) 
+p <- p1/j1/j2 + plot_annotation(tag_levels = 'A')  & theme(plot.title=element_text(size=12)) 
+p
+
+pdf("shared_community_v4_dino.pdf", height=9, width=10) ; plot(p) ; dev.off()
+
+```
+
+## Supplementary table S2 - No. of ASVs summary
+```{r}
+
+#upset only accounts for presence/absence
+upset_df <- ps_long %>%
+  filter(sample %in% c("trap_fix", "water_CTD", "core", "water_pump")) %>%
+  select(asv_code,sample) %>% # group by the level of classification
+  distinct() %>%
+  mutate(n=1) %>%
+  pivot_wider(names_from = sample,
+              values_fill = 0,
+              values_from = n) %>%
+  data.frame() # this part is important at the end of forming the df if not will have error later
+
+taxa <- as.data.frame(ps_filt@tax_table) %>%
+  unique
+
+# proportion of shared ASVs in each sample type
+common_asvs <- upset_df %>%
+    mutate(shared_asvs = case_when(trap_fix ==1 & water_CTD ==1 & core ==1 & water_pump == 1 ~"surface exported",
+                                   trap_fix ==1 & water_CTD ==1 & core ==1 & water_pump == 0 ~"surface exported",
+                                   trap_fix ==1 & water_CTD ==1 & water_pump == 1 & core==0 ~ "surface not exported",
+                                   trap_fix ==1 & water_CTD ==1 & water_pump == 0 & core==0 ~ "surface not exported",
+                                    trap_fix ==1 & water_CTD ==0 & core ==1 & water_pump == 1 ~"pump exported",
+                                    trap_fix ==1 & water_CTD ==0 & core ==0 & water_pump == 1 ~"pump not exported",
+                                    trap_fix ==1 & water_CTD ==0 & core ==0 & water_pump == 0 ~"unique",
+                                    trap_fix ==0 & water_CTD ==1 & core ==0 & water_pump == 0 ~"unique",
+                                    trap_fix ==0 & water_CTD ==0 & core ==1 & water_pump == 0 ~"unique",
+                                    trap_fix ==0 & water_CTD ==0 & core ==0 & water_pump == 1 ~"unique",
+                                    trap_fix ==0 & water_CTD ==1 & core ==0 & water_pump == 1 ~"unique",
+                                    trap_fix ==0 & water_CTD ==0 & core ==1 & water_pump == 1 ~"unique",
+                                    TRUE~ "others"))
+common_asvs_join <- ps_long %>%
+  filter(sample %in% c("trap_fix", "water_CTD", "core", "water_pump")) %>%
+  full_join(common_asvs) %>%
+  mutate(sample = fct_relevel(sample, "water_CTD","water_pump",  "trap_fix", "core")) %>%
+  mutate(cycle_name_2 = fct_relevel(cycle_name_2, "SA2", "SA1", "SA-Sc", "ST2", "ST1")) %>%
+  mutate(shared_asvs = fct_relevel(shared_asvs,  "unique", "pump not exported","pump exported", "surface not exported", "surface exported"))
+
+# table
+summary <- common_asvs_join %>%
+  select(sample, shared_asvs, subdivision, class, asv_code) %>%
+  group_by(sample, shared_asvs, subdivision, class, asv_code) %>%
+  unique() %>%
+  group_by(sample, shared_asvs, subdivision, class) %>%
+  summarise(asv_num = n()) %>%
+  filter(shared_asvs != "unique") %>%
+  filter(shared_asvs != "others") %>%
+  ungroup() %>%
+  filter(!((sample == "water_pump" & shared_asvs == "surface not exported")|
+         (sample == "water_pump" & shared_asvs == "surface exported"))) %>%
+  select(-sample) %>%
+  unique() %>%
+  pivot_wider(names_from = shared_asvs, values_from = asv_num, values_fill = 0)
+
+summary2 <- common_asvs_join %>%
+  select(sample, shared_asvs, subdivision, class, asv_code) %>%
+  group_by(sample, shared_asvs, subdivision, class, asv_code) %>%
+  unique() %>%
+  group_by(sample, shared_asvs, subdivision, class) %>%
+  summarise(asv_num = n()) %>%
+  filter(shared_asvs == "unique") %>%
+  ungroup() %>%
+  select(-shared_asvs) %>%
+  pivot_wider(names_from = sample, values_from = asv_num, values_fill = 0)
+
+summary_asv <- full_join(summary, summary2) %>%
+  select(subdivision: "pump exported", trap_fix) %>% # remove this for the rest of the samples unique ASV
+  mutate_all(~replace(., is.na(.), 0)) %>%
+  mutate(total = rowSums(across(where(is.numeric)))) %>%
+  filter(total !=0) %>%
+  arrange(desc(total)) %>%
+  arrange(subdivision)
+  # summarise(across(where(is.numeric), ~ sum(.x, na.rm = TRUE)))
+ writexl::write_xlsx(summary_asv, path = "shared_asv_num_v2.xlsx")
+ 
+ #check exported taxa in sediments
+ summary_asv_sediment <- full_join(summary, summary2) %>%
+  select(subdivision: "pump exported", core) %>% # remove this for the rest of the samples unique ASV
+  mutate_all(~replace(., is.na(.), 0)) %>%
+  select(-'surface not exported') %>%
+  select(-'pump not exported') %>%
+  mutate(total = rowSums(across(where(is.numeric)))) %>%
+  filter(total !=0) %>%
+  arrange(desc(total)) %>%
+  arrange(subdivision) 
+```
+
+# 2. fixed vs live ASV richness
+```{r}
+source(here("init_files", "read_data_v3.R")) #load phyloseq and modify variables
+ps_all
+source(here("init_files", "filt_samples.R")) #filter out replicates, blanks, low abund ASVs etc. 
+ps
+
+ps_norm <- phyloseq_normalize_median(ps)
+ps_long <- phyloseq_transform_to_long(ps_norm)
+
+library(UpSetR)
+
+# number of distinct ASVs per sample type
+sample_asv <- ps_long %>%
+  filter(sample %in% c("trap_fix", "trap_live")) %>%
+  select(asv_code, sample) %>%
+  distinct() %>%
+  group_by(sample) %>%
+  summarise(num_asv = n())
+sample_asv
+
+taxa <- as.data.frame(ps_filt@tax_table) %>%
+  unique
+
+#upset only accounts for presence/absence
+upset_df <- ps_long %>%
+  filter(sample %in% c("trap_fix", "trap_live")) %>%
+  select(asv_code,sample) %>% # group by the level of classification
+  distinct() %>%
+  mutate(n=1) %>%
+  pivot_wider(names_from = sample,
+              values_fill = 0,
+              values_from = n) %>%
+  data.frame() # this part is important at the end of forming the df if not will have error later
+
+fig_upset_asv <- UpSetR::upset(upset_df, 
+                                # nsets = 7,
+                                empty.intersections = "on", 
+                                # nintersects = 15,
+                                mainbar.y.label = "Number of ASVs", 
+                                sets.x.label = "ASVs", 
+                                order.by = "freq", 
+                                mb.ratio = c(0.6, 0.4))
+fig_upset_asv
+# need to manually save
+
+
+upset_taxa <- upset_df %>%
+  mutate(group = case_when(trap_fix == 1 & trap_live == 1 ~ "both",
+                           trap_fix == 1 & trap_live  == 0 ~ "trap_fix",
+                           trap_fix == 0 & trap_live  == 1 ~ "trap_live")) %>%
+  left_join(taxa, by=join_by(asv_code == ASV)) %>%
+  group_by(group, order) %>%
+  summarise(n = n()) %>%
+  ungroup() %>%
+  complete(group, order) %>%
+  replace_na(list(n= 0))
+
+subdivision_list <- taxa %>%select(subdivision, order) %>% unique()
+
+#proportion of fixed trap ASVs found in live traps
+df <- upset_taxa %>%
+  replace_na(list(n= 0)) %>%
+  pivot_wider(names_from = group, values_from = n) %>%
+  # select(-trap_live) %>%
+  mutate(fixed_total = trap_fix+both) %>%
+  mutate(live_total = trap_live+both) %>%
+  # mutate(live_overlap = fixed_total-trap_fix) %>%
+  mutate(live_prop = round((both/fixed_total)*100, 1)) %>%
+  mutate(unique_live = trap_live) %>%
+  select(order, fixed_total, live_prop, unique_live) %>%
+  left_join(subdivision_list, by=join_by(order)) %>%
+  select(subdivision, order, live_prop, fixed_total, unique_live) %>%
+  arrange(subdivision, desc(live_prop)) %>%
+  filter(live_prop != 0) %>%
+  filter(fixed_total!= 0)
+
+df  
+writexl::write_xlsx(df, "fix_vs_live_ASV.xlsx")
+df %>%
+  summarise(mean= round(mean(live_prop),2),
+            sd = round(sd(live_prop),2))
+  
+```

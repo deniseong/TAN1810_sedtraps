@@ -1,0 +1,4 @@
+"0",""
+"0","nutrients <- nutrients_raw %>%"
+"0","  select(CTD, Depth_nominal, depth, NO3_uM, date, time, cycle_name) %>%"
+"0","  filter(Depth_nominal == 1) # only from depth 10 m?"
