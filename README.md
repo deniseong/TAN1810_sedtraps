@@ -7,7 +7,7 @@ All unprocessed bioinformatics data have been deposited in NCBI Sequence Read Ar
 ## metabarcoding
 - Phyloseq file (metapr2_phyloseq_asv_set_47_Eukaryota_pr2_version_5.0.rds)
 - fasta file with all ASV sequences (metapr2_asv_set_47_Eukaryota.fasta)
-- ASV table (metapr2_asv_set_47_Eukaryota_pr2_version_5.0.xlsx)
+- ASV table, assigned with PR2 version 5.0 (metapr2_asv_set_47_Eukaryota_pr2_version_5.0.xlsx)
 - sample metadata (metapr2_samples_asv_set_47_Denise.xlsx)
 - ASV abundance (metapr2_asv_set_47_abundance.xls)
 
