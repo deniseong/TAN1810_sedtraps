@@ -16,16 +16,16 @@ All unprocessed bioinformatics data have been deposited in NCBI Sequence Read Ar
 - init_files: load libraries, colours, read data
 - data: metadata (sampling coordinates, CTD, nutrients, chlorophyll, flux measurements)
 - deseq: deseq raw data output
-- figs_paper
-- tables
+- figs_paper: figures produced
+- tables: tables produced
 
 **Rmd files:**
-- 01_map_v2.Rmd: map figure
-- 02_Table_env.Rmd: metadata processing
-- 03_POC plots.Rmd
-- 04_diversity plots.Rmd: sample preprocessing and checks, alpha diversity and richess, upset plot for samples
-- 05_NMDS_v2.Rmd: NMDS, PERMANOVA analysis
-- 06_treemap heatmap.Rmd: treemap and heatmap main plots
+- 01_map_v2.Rmd: map main figure
+- 02_Table_env.Rmd: metadata processing (Temperature, salinity, nitrate, chlorophyll, etc.)
+- 03_POC plots.Rmd: POC and Chla:phaeopigment main figures
+- 04_diversity plots.Rmd: sample preprocessing and checks, alpha diversity and richess, upset main figures for comparing ASV overlaps between samples
+- 05_NMDS_v2.Rmd: NMDS main figure, PERMANOVA analysis
+- 06_treemap heatmap.Rmd: treemap and heatmap main figures
 - 07_shared_checks.Rmd: check for common ASVs between upper and lower water columns
 - 07_shared_v3.Rmd: "shared ASVs" analysis
 - 08_deseq_v5.Rmd: Deseq for export and transfer analysis
