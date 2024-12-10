@@ -1,6 +1,6 @@
 # TAN1810_sedtraps
 
-Script and data for: 
+Script and data for: Denise Ong Rui Ying, Andrés Gutiérrez-Rodríguez, Jaret Bilewitch, Scott Nodder, Michael R. Stukel, Moira Décima, Adriana Lopes dos Santos. (In preparation). Export dynamics of protists across the southern subtropical frontal zone reveal taxon-specific patterns.
 
 All unprocessed bioinformatics data have been deposited in NCBI Sequence Read Archive (PRJNA670061 and PRJNA1033349). 
 
