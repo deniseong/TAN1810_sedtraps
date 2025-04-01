@@ -475,7 +475,7 @@ p4 <- ps_long_common %>%
                                  class == "Syndiniales" ~ "Syndiniales",
                                  class == "Dinophyceae" ~ "Dinophyceae",
                                  TRUE~"Others"))%>%
-  mutate(subdivision = fct_relevel(subdivision, "Others", "Bigyra", "Ciliophora", "Radiolaria","Cercozoa", "Gyrista", "Syndiniales", "Dinophyceae")) %>%
+  mutate(subdivision = fct_relevel(subdivision, "Others","Cercozoa",  "Bigyra", "Ciliophora", "Radiolaria","Gyrista", "Syndiniales", "Dinophyceae")) %>%
   ggplot(aes(x=n_reads, y=cycle_name_2, color=subdivision, fill=subdivision)) + 
         geom_bar(position="fill", stat="identity") + 
         theme(panel.spacing.y = unit(0,"lines"),
@@ -512,7 +512,7 @@ p5 <- ps_long_common %>%
                                  class == "Syndiniales" ~ "Syndiniales",
                                  class == "Dinophyceae" ~ "Dinophyceae",
                                  TRUE~"Others"))%>%
-  mutate(subdivision = fct_relevel(subdivision, "Others", "Bigyra", "Ciliophora", "Radiolaria","Cercozoa", "Gyrista", "Syndiniales", "Dinophyceae"))  %>%
+  mutate(subdivision = fct_relevel(subdivision, "Others","Cercozoa",  "Bigyra", "Ciliophora", "Radiolaria","Gyrista", "Syndiniales", "Dinophyceae"))  %>%
   ggplot(aes(x=n_reads, y=cycle_name_2, color=subdivision, fill=subdivision)) + 
         geom_bar(position="fill", stat="identity") + 
         theme(panel.spacing.y = unit(0,"lines"),
@@ -538,21 +538,22 @@ p5
 ### Main fig 6
 ```{r}
 #main
-j1 <- (p2|p3) + plot_annotation(tag_levels = 'A') + plot_layout(widths = c(2, 1)) + plot_layout(guides = 'collect') & theme(plot.title=element_text(size=12)) 
-p <- p1/j1 + plot_annotation(tag_levels = 'A')  & theme(plot.title=element_text(size=12)) 
+j1 <- (p2|p3) + plot_annotation(tag_levels = 'A',title = "Upper water column ASVs") + plot_layout(widths = c(2, 1)) + plot_layout(guides = 'collect') & theme(plot.title=element_text(size=12)) 
+j2 <- (p4|p5)+ plot_annotation(tag_levels = 'A',title = "Lower water column ASVs") + plot_layout(widths = c(2, 1)) + plot_layout(guides = 'collect')  & theme(plot.title=element_text(size=12)) 
+p <- p1/j1/j2 + plot_annotation(tag_levels = 'A')  & theme(plot.title=element_text(size=12)) 
 p
 
-pdf("shared_community_v4_main.pdf", height=6, width=10) ; plot(p) ; dev.off()
+pdf("shared_community_v5_main.pdf", height=9, width=10) ; plot(p) ; dev.off()
 
 ```
 
 ### Supplementary figs
 ```{r}
 #supp
-p <- (p4|p5) + plot_annotation(tag_levels = 'A') + plot_layout(widths = c(2, 1)) + plot_layout(guides = 'collect') & theme(plot.title=element_text(size=12)) 
-p
+# p <- (p4|p5) + plot_annotation(tag_levels = 'A') + plot_layout(widths = c(2, 1)) + plot_layout(guides = 'collect') & theme(plot.title=element_text(size=12)) 
+# p
 
-pdf("shared_community_v4_supp.pdf", height=3, width=9) ; plot(p) ; dev.off()
+# pdf("shared_community_v4_supp.pdf", height=3, width=9) ; plot(p) ; dev.off()
 
 
 #dino

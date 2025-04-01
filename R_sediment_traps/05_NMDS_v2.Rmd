@@ -121,16 +121,20 @@ nmds_sample <- nmds_sample_sub %>%
     ggplot() +
     stat_ellipse(aes(x=NMDS1, y= NMDS2, colour = sample)) +
     geom_point(aes(x=NMDS1, y= NMDS2, colour = sample, shape = cycle_name_2
-                   )) +
+                   ), size =2.5) +
     scale_colour_manual(values = sample_palette) +
     scale_shape_manual(values=c(3,7,16,17,15)) + # shapes for cycle
-    theme(legend.position = "right") +
-    annotate("text", x = 0.3, y = -0.5, label = "Stress = 0.20")
+    theme(legend.position = "right",
+        axis.text.x = element_text(size = 10),
+        axis.title.x =element_text(size=13),
+        axis.text.y = element_text(size = 10),
+        axis.title.y =element_text(size=13)) +
+    annotate("text", x = 0.3, y = -0.5, label = "Stress = 0.20", size = 5)
 
 
 nmds_sample
 
-# pdf("nmds_samples.pdf", height=5, width=6) ; plot(nmds_sample) ; dev.off()
+pdf("nmds_samples.pdf", height=5, width=6.5) ; plot(nmds_sample) ; dev.off()
 ```
 
 ## PERMANOVA

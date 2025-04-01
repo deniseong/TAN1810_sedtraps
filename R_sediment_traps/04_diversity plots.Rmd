@@ -10,8 +10,9 @@ Using this guide as reference to use microviz: https://david-barnett.github.io/m
 - Initial checks of the community - trap blanks, replicates and outlier results of fixed traps in SA2.
 - Check ASVs with low abundance reads
 - subset data options
-- Main figure - diversity and richness ASV, overlap between sample types
+- supplementary figure - diversity and richness ASV, overlap between sample types
 - supplementary figure - diversity and richness of ASVs between cycles
+- supplementary figure - barplot of all samples
 
 # Initialize
 ```{r echo=TRUE, message=FALSE, warning=FALSE}
