@@ -15,7 +15,6 @@ All unprocessed bioinformatics data have been deposited in NCBI Sequence Read Ar
 **Folders:**
 - init_files: load libraries, colours, read data
 - data: metadata (sampling coordinates, CTD, nutrients, chlorophyll, flux measurements)
-- deseq: deseq raw data output
 - figs_paper: figures produced
 - tables: tables produced
 
