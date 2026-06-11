@@ -1,0 +1,988 @@
+---
+title: "ALDEx"
+format: html
+---
+
+# init
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Load package
+library(here)
+library(purrr)
+library(ALDEx2)
+
+source(here("init_files", "init.R")) #for libraries
+source(here("init_files", "define_functions.R")) #functions to 1.transform to dataframe, 2.normalise and 3.create treemaps
+
+set.seed(1)
+
+
+# Subdivision palette
+divisionPalette <- readxl::read_excel("init_files/division_palette.xlsx", sheet = "Sheet1")
+divisionPalette <- structure(divisionPalette$colour,.Names=divisionPalette$subdivision) 
+
+dinoPalette <- readxl::read_excel("init_files/division_palette.xlsx", sheet = "Sheet2")
+dinoPalette <- structure(dinoPalette$colour,.Names=dinoPalette$order) 
+
+```
+
+# ALDEx2 from phyloseq function
+```{r}
+phyloseq_run_aldex <- function(ps) {
+  counts <- as(otu_table(ps), "matrix")
+  
+  # Ensure taxa are rows
+  if (!taxa_are_rows(ps)) {
+    counts <- t(counts)
+  }
+  
+  meta <- sample_data(ps)
+  conds <- as.character(meta$sample_depth)
+  print(conds)
+  
+  x <- aldex.clr(counts, conds, mc.samples=128, verbose=F, gamma=0.20)
+  x.tt <- aldex.ttest(x, hist.plot=F, paired.test=FALSE, verbose=FALSE)
+  x.effect <- aldex.effect(x, CI=T, verbose=F, include.sample.summary=F, paired.test=FALSE)
+  
+  x.all <- data.frame(x.tt,x.effect) %>%
+    rownames_to_column(var = "ASV")
+  
+  taxa <- as.data.frame(tax_table(ps))
+  
+  x.taxa <- full_join(x.all, taxa)
+  
+  return(x.taxa)
+}
+```
+
+# load data
+```{r}
+source(here("init_files", "read_data_v3.R")) #load phyloseq and modify variables
+ps_all
+source(here("init_files", "filt_samples.R")) #filter out replicates, blanks etc. 
+ps
+```
+
+
+
+# subset phyloseq
+```{r}
+deseq.subset <- ps %>%
+  # combine depth 1+2, 3+4
+  ps_filter(sample == "water_CTD" | sample == "trap_fix") %>%
+  ps_filter(cycle_name != "SA-Sc-B") %>% # no fixed traps in this cycle
+  ps_mutate(sample_depth = case_when(sample == "trap_fix" ~ paste(sample, depth_category, sep = "_"), 
+                                     # add label for depth only for fixed traps
+                                     sample == "water_CTD" ~ sample)) %>%
+  ps_mutate(sample_depth = case_when(sample_depth == "trap_fix_1" ~ "trap_fix_1_2",
+                                     sample_depth == "trap_fix_2" ~ "trap_fix_1_2",
+                                     sample_depth == "trap_fix_3" ~ "trap_fix_3_4",
+                                     sample_depth == "trap_fix_4" ~ "trap_fix_3_4",
+                                     TRUE ~ as.character(sample_depth))) %>%
+  ps_mutate(sample_depth_wm = paste(sample_depth, water_mass, sep = "_"))  %>%
+  tax_filter(min_total_abundance = 11)
+
+deseq.subset
+
+sample <- as.data.frame(deseq.subset@sam_data)
+
+```
+# list of ASVs from sediment
+```{r}
+ps_core <- ps %>% 
+   ps_filter(sample == "core")
+ps_long <- phyloseq_transform_to_long(ps_core)
+
+core_asvs <- ps_long %>%
+  select(ASV, water_mass) %>%
+  unique() %>%
+  mutate(sediment = "detected")
+
+core_asvs_ST <- core_asvs %>%
+  filter(water_mass == "ST") %>%
+  select(ASV, sediment)
+
+core_asvs_SA <- core_asvs %>%
+  filter(water_mass == "SA") %>%
+  select(ASV, sediment)
+```
+
+# ST analysis
+Subset ST water mass, filter ASVs for minimum prevalence 5%, and only asvs present in all sample groups.
+```{r}
+# filter for ASVs with minimum prevalence 10%
+deseq.st <- deseq.subset %>%
+  ps_filter(water_mass == "ST") %>%
+  tax_filter(min_prevalence = 0.10)
+
+# filter for asvs present in all the sample groups
+group_var <- "sample_depth"
+
+taxa_by_group <- sample_data(deseq.st)[[group_var]] %>% 
+  unique() %>% 
+  purrr::map(function(x) {
+    # Subset to one group at a time
+    ps_sub <- prune_samples(sample_data(deseq.st)[[group_var]] == x, deseq.st)
+    # Get names of taxa that have a sum > 0 in this specific group
+    phyloseq::taxa_names(phyloseq::prune_taxa(taxa_sums(ps_sub) > 0, ps_sub))
+  })
+
+common_taxa <- purrr::reduce(taxa_by_group, intersect)
+
+deseq.st.filt <- prune_taxa(common_taxa, deseq.st)
+
+deseq.st.filt
+
+# no. of samples in each group
+deseq.st.filt@sam_data %>%
+  group_by(sample_depth_wm) %>%
+  summarise(n=n())
+
+```
+
+
+run aldex analysis separately for export and transfer.
+```{r}
+ps <- deseq.st.filt %>%
+  ps_filter(sample_depth != "trap_fix_3_4")
+
+res_st.export<- phyloseq_run_aldex(ps) 
+  
+ps <- deseq.st.filt %>%
+  ps_filter(sample_depth != "water_CTD")
+
+res_st.transfer <- phyloseq_run_aldex(ps) 
+```
+
+plot 
+```{r}
+res_filt_st.export <- res_st.export %>%
+  rename_with(~ paste0(.x, "_export"), .cols = we.ep:overlap) %>%
+  mutate(is_significant_export = (overlap_export <= 0.4 & abs(effect_export) > 0.25)) %>%
+  mutate(diff.btw_export = diff.btw_export * (-1)) 
+
+res_filt_st.transfer <- res_st.transfer %>%
+  rename_with(~ paste0(.x, "_transfer"), .cols = we.ep:overlap) %>%
+  mutate(is_significant_transfer = (overlap_transfer <= 0.4 & abs(effect_transfer) > 0.25)) %>%
+  select(ASV:overlap_transfer, is_significant_transfer)
+
+res_filt_st.join <- full_join(res_filt_st.export, res_filt_st.transfer, by = join_by(ASV)) %>%
+  full_join(core_asvs_ST) %>%
+  mutate(sediment = coalesce(sediment, "not detected")) %>%
+  filter(!(is.na(diff.btw_export))) 
+
+writexl::write_xlsx(res_filt_st.join, "aldex_results_st.xlsx")
+```
+
+## plot
+
+### supp - protist except dino
+```{r}
+all_classes <- res_filt_st.join %>%
+  filter(subdivision != "Dinoflagellata") %>%
+  filter(is_significant_export | is_significant_transfer) %>%
+  distinct(class) %>%
+  pull(class)
+
+subdivision_list <- res_filt_st.join %>%
+  filter(subdivision != "Dinoflagellata") %>%
+  select(subdivision, class) %>%
+  distinct()
+
+g1 <- res_filt_st.join %>%
+  filter(subdivision != "Dinoflagellata") %>%
+  filter(is_significant_export) %>%
+  complete(class = all_classes) %>%
+  left_join(subdivision_list,by = "class") %>%
+  ggplot(aes(x=fct_rev(class), y=diff.btw_export)) + 
+  geom_point(aes(shape=sediment, size=sediment, fill=subdivision.y), colour="black", na.rm = TRUE) +
+  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust=0.5))+
+  scale_fill_manual(values=divisionPalette) +
+  geom_hline(yintercept = 0, linetype="solid") +
+  coord_flip() +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 10),
+        axis.title.x =element_text(size=10),
+        axis.text.y = element_text(size = 8),
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.position = "right"
+        # legend.position = "none"
+        ) +
+  ylab("Median CLR difference - Water CTD <--> Upper fixed traps") +
+  xlab("Class")+
+  ggtitle("Export potential") +
+  theme(strip.text.y = element_blank(),
+        strip.background = element_blank(),
+        panel.spacing.x = unit(0,"lines"),
+        panel.spacing.y = unit(0, "lines"),
+        panel.border = element_blank(),
+        legend.title = element_markdown()) +
+  facet_grid(subdivision.y~., scales = "free", space = "free", switch = "y") +
+  # scale_shape_manual(values=c(3, 16, 17)) +
+  scale_size_manual(values=c(3, 2.5)) +
+  scale_shape_manual(values = c(24,21))
+g1
+# pdf("deseq_legend.pdf", height= 10, width=7) ; plot(g1) ; dev.off()
+
+
+g2 <- res_filt_st.join %>%
+  filter(subdivision != "Dinoflagellata") %>%
+  filter(is_significant_transfer) %>%
+  complete(class = all_classes) %>%
+  left_join(subdivision_list,by = "class") %>%
+  # mutate(class = factor(class, levels = all_classes)) %>%
+  ggplot(aes(x=fct_rev(class), y=diff.btw_transfer)) + 
+  geom_point(aes(shape=sediment, size=sediment, fill=subdivision.y), colour="black") +
+  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust=0.5))+
+  scale_fill_manual(values=divisionPalette) +
+  geom_hline(yintercept = 0, linetype="solid") +
+  coord_flip() +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 10),
+        axis.title.x =element_text(size=10),
+        axis.text.y = element_text(size = 8),
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.position = "right"
+        # legend.position = "none"
+        ) +
+  ylab("Median CLR difference - Upper fixed traps <--> Lower fixed traps") +
+  xlab("Class")+
+  ggtitle("Transfer potential") +
+  theme(strip.text.y = element_blank(),
+        strip.background = element_blank(),
+        panel.spacing.x = unit(0,"lines"),
+        panel.spacing.y = unit(0, "lines"),
+        panel.border = element_blank(),
+        legend.title = element_markdown()) +
+  facet_grid(subdivision.y~., scales = "free", space = "free", switch = "y") +
+  # scale_shape_manual(values=c(3, 16, 17)) +
+  scale_size_manual(values=c(3, 2.5)) +
+  scale_shape_manual(values = c(24,21))
+g2
+# pdf("deseq_legend.pdf", height= 10, width=7) ; plot(g1) ; dev.off()
+
+```
+
+### supp - dino
+```{r}
+all_order <- res_filt_st.join %>%
+  filter(subdivision == "Dinoflagellata") %>%
+  filter(is_significant_export | is_significant_transfer) %>%
+  distinct(order) %>%
+  pull(order)
+
+class_list <- res_filt_st.join %>%
+  filter(subdivision == "Dinoflagellata") %>%
+  select(class, order) %>%
+  distinct()
+
+g1_dino <- res_filt_st.join %>%
+  filter(subdivision == "Dinoflagellata") %>%
+  filter(is_significant_export) %>%
+  complete(order = all_order) %>%
+  left_join(class_list, by = "order") %>%
+  ggplot(aes(x=fct_rev(order), y=diff.btw_export)) + 
+  geom_point(aes(shape=sediment, size=sediment, fill=class.y), colour="black") +
+  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust=0.5))+
+  scale_fill_manual(values=divisionPalette) +
+  geom_hline(yintercept = 0, linetype="solid") +
+  coord_flip() +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 10),
+        axis.title.x =element_text(size=10),
+        axis.text.y = element_text(size = 8),
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.position = "right"
+        # legend.position = "none"
+        ) +
+  ylab("Median CLR difference - Water CTD <--> Upper fixed traps") +
+  xlab("Class")+
+  ggtitle("Export potential") +
+  theme(strip.text.y = element_blank(),
+        strip.background = element_blank(),
+        panel.spacing.x = unit(0,"lines"),
+        panel.spacing.y = unit(0, "lines"),
+        panel.border = element_blank(),
+        legend.title = element_markdown()) +
+  facet_grid(class.y~., scales = "free", space = "free", switch = "y") +
+  # scale_shape_manual(values=c(3, 16, 17)) +
+  scale_size_manual(values=c(3, 2.5)) +
+  scale_shape_manual(values = c(24,21))
+g1_dino
+# pdf("deseq_legend.pdf", height= 10, width=7) ; plot(g1) ; dev.off()
+
+
+g2_dino <- res_filt_st.join %>%
+  filter(subdivision == "Dinoflagellata") %>%
+  filter(is_significant_transfer) %>%
+  complete(order = all_order) %>%
+  left_join(class_list, by = "order") %>%
+  ggplot(aes(x=fct_rev(order), y=diff.btw_transfer)) + 
+  geom_point(aes(shape=sediment, size=sediment, fill=class.y), colour="black") +
+  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust=0.5))+
+  scale_fill_manual(values=divisionPalette) +
+  geom_hline(yintercept = 0, linetype="solid") +
+  coord_flip() +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 10),
+        axis.title.x =element_text(size=10),
+        axis.text.y = element_text(size = 8),
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.position = "right"
+        # legend.position = "none"
+        ) +
+  ylab("Median CLR difference - Upper fixed traps <--> Lower fixed traps") +
+  xlab("Order")+
+  ggtitle("Transfer potential") +
+  theme(strip.text.y = element_blank(),
+        strip.background = element_blank(),
+        panel.spacing.x = unit(0,"lines"),
+        panel.spacing.y = unit(0, "lines"),
+        panel.border = element_blank(),
+        legend.title = element_markdown()) +
+  facet_grid(class.y~., scales = "free", space = "free", switch = "y") +
+  # scale_shape_manual(values=c(3, 16, 17)) +
+  scale_size_manual(values=c(3, 2.5)) +
+  scale_shape_manual(values = c(24,21))
+g2_dino
+# pdf("deseq_legend.pdf", height= 10, width=7) ; plot(g1) ; dev.off()
+
+```
+
+### main
+```{r}
+
+g3 <- res_filt_st.join %>% 
+  filter(subdivision != "Dinoflagellata") %>%
+  filter(is_significant_export & is_significant_transfer) %>%
+  mutate(subdivision = fct_relevel(subdivision,
+                                   "Chlorophyta_X", "Cryptophyta_X", "Gyrista", "Haptophyta_X", "Prasinodermophyta_X", "Ciliophora", "Radiolaria")) %>%
+  ggplot(aes(x = diff.btw_export, y = diff.btw_transfer)) +
+  geom_point(aes(shape=sediment, fill=subdivision), colour="black", size = 4) +
+  geom_text_repel(
+    data = res_filt_st.join %>% 
+      filter(subdivision != "Dinoflagellata") %>%
+      filter(is_significant_export & is_significant_transfer) %>% 
+      filter(sediment == "detected"),
+    aes(label = class, colour = subdivision),
+    size = 3, max.overlaps = 30,
+    box.padding = 0.25,
+    point.padding = 0.3,
+    hjust = "outward",
+    direction = "y")+
+  geom_vline(xintercept = 0, linetype="solid") +  
+  geom_hline(yintercept = 0, linetype="solid") +  
+  xlab("Median CLR difference - Water CTD <--> Upper fixed traps") +
+  ylab("Median CLR difference - Upper <--> Lower fixed traps") +
+  scale_fill_manual(values=divisionPalette) +
+  scale_colour_manual(values=divisionPalette) +
+  theme(axis.text.x = element_text(size = 9),
+        axis.title.x =element_text(size=10),
+        axis.text.y = element_text(size = 9),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 12),
+        # legend.position = "none"
+        ) +
+  scale_shape_manual(values = c(24,21))+
+  coord_fixed() +
+  ggtitle("Subtropical") +
+  scale_y_continuous(limits = c(-10, 10))+
+  scale_x_continuous(limits = c(-10, 10))
+
+g3
+
+```
+
+
+
+```{r}
+
+g4 <- res_filt_st.join %>% 
+  filter(subdivision == "Dinoflagellata") %>%
+  # filter(is_significant_transfer) %>%
+  filter(is_significant_export & is_significant_transfer) %>%
+  ggplot(aes(x = diff.btw_export, y = diff.btw_transfer)) +
+  geom_point(aes(shape=sediment, size=sediment, fill=class, colour = class)) +
+  geom_text_repel(
+    data = res_filt_st.join %>% 
+      filter(subdivision == "Dinoflagellata") %>%
+      filter(is_significant_export & is_significant_transfer) %>% 
+      filter(sediment == "detected"),
+    aes(label = order, colour = order),
+    size = 3, max.overlaps = 30,
+    box.padding = 0.25,
+    point.padding = 0.3,
+    hjust = "outward",
+    direction = "y")+
+  geom_vline(xintercept = 0, linetype="solid") +  
+  geom_hline(yintercept = 0, linetype="solid") +  
+  xlab("Median CLR difference - Water CTD <--> Upper fixed traps") +
+  ylab("Median CLR difference - Upper <--> Lower fixed traps") +
+  scale_fill_manual(values=divisionPalette) +
+  scale_colour_manual(values=divisionPalette)+
+  theme(axis.text.x = element_text(size = 9),
+        axis.title.x =element_text(size=10),
+        axis.text.y = element_text(size = 9),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 12),
+        # legend.position = "none"
+        ) +
+  scale_size_manual(values=c(4, 4)) +
+  scale_shape_manual(values = c(24,21))+
+  coord_fixed() +
+  ggtitle("Subtropical") +
+  scale_y_continuous(limits = c(-10, 10))+
+  scale_x_continuous(limits = c(-10, 10))
+
+g4
+
+
+```
+
+
+## ST- ASV raw data supp fig
+```{r}
+
+target_asvs <- res_filt_st.join %>%
+  filter(subdivision != "Dinoflagellata") %>%
+  # filter(is_significant_transfer) %>%
+  filter(is_significant_export & is_significant_transfer) %>%
+  pull(ASV) 
+
+ps_rel <- transform_sample_counts(deseq.st.filt, function(x) x / sum(x)) %>%
+  psmelt() 
+
+plot_df <- ps_rel %>%
+  filter(OTU %in% target_asvs)  %>%
+  mutate(sample_depth = factor(sample_depth, 
+                               levels = c("water_CTD", "trap_fix_1_2", "trap_fix_3_4"))) %>%
+  mutate(label = paste0(subdivision, " | ", genus, "\n", OTU))
+
+ p <- ggplot(plot_df, aes(x = sample_depth, y = Abundance, fill = sample_depth)) +
+  geom_boxplot(alpha = 0.2, outlier.shape = NA) + 
+  geom_jitter(width = 0.2, shape = 21, size = 3, alpha = 0.75) +
+  facet_wrap(~label, scales = "free_y") + 
+  theme_bw() +
+  ggtitle("Subtropical - Differentially abundant ASVs")+
+  labs(y = "Relative Abundance", x = "Sample Depth")+
+   theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # rotate x-axis labels
+    legend.text = element_text(size = 12),
+  legend.title = element_text(size = 14),
+  legend.key.size = unit(1.5, "lines"))  # size of legend boxes
+p
+ # pdf("aldex_st_raw rel abund.pdf", height= 9, width=17) ; plot(p) ; dev.off()
+```
+
+# SA analysis
+```{r}
+
+deseq.sa <- deseq.subset %>%
+  ps_filter(water_mass == "SA") %>%
+  tax_filter(min_prevalence = 0.1)
+
+
+group_var <- "sample_depth"
+
+# create a list of asvs present in each group
+taxa_by_group <- sample_data(deseq.sa)[[group_var]] %>% 
+  unique() %>% 
+  purrr::map(function(x) {
+    ps_sub <- prune_samples(sample_data(deseq.sa)[[group_var]] == x, deseq.sa)
+    taxa_names(prune_taxa(taxa_sums(ps_sub) > 0, ps_sub))
+  })
+
+common_taxa <- purrr::reduce(taxa_by_group, intersect) # find ASVs common in all lists
+
+# prune taxa, only keep those asvs that are common
+deseq.sa.filt <- prune_taxa(common_taxa, deseq.sa)
+
+deseq.sa.filt
+
+# #no. of samples in each group
+deseq.sa.filt@sam_data %>%
+  group_by(sample_depth_wm) %>%
+  summarise(n=n())
+
+```
+
+
+
+```{r}
+ps <- deseq.sa.filt %>%
+  ps_filter(sample_depth != "trap_fix_3_4")
+
+res_sa.export<- phyloseq_run_aldex(ps)
+  
+ps <- deseq.sa.filt %>%
+  ps_filter(sample_depth != "water_CTD")
+
+res_sa.transfer <- phyloseq_run_aldex(ps)
+
+```
+
+```{r}
+
+res_filt_sa.export <- res_sa.export %>%
+  mutate(is_significant_export = (overlap <= 0.4 & abs(effect) > 0.25)) %>%
+  mutate(diff.btw_export = diff.btw * (-1))  %>%
+  select(is_significant_export, diff.btw_export, ASV, domain:species)
+
+res_filt_sa.transfer <- res_sa.transfer %>%
+  mutate(is_significant_transfer = (overlap <= 0.4 & abs(effect) > 0.25)) %>%
+  mutate(diff.btw_transfer = diff.btw)  %>%
+  select(is_significant_transfer, diff.btw_transfer, ASV, domain:species)
+
+res_filt_sa.join <- full_join(res_filt_sa.export, res_filt_sa.transfer %>% select(ASV, diff.btw_transfer, is_significant_transfer), by = join_by(ASV)) %>%
+  full_join(core_asvs_SA) %>%
+  mutate(sediment = coalesce(sediment, "not detected")) %>%
+  filter(!(is.na(diff.btw_export))) 
+
+writexl::write_xlsx(res_filt_sa.join, "aldex_results_sa.xlsx")
+
+```
+
+## plot
+
+### supp - protist except dino
+```{r}
+all_classes <- res_filt_sa.join %>%
+  filter(subdivision != "Dinoflagellata") %>%
+  filter(is_significant_export | is_significant_transfer) %>%
+  distinct(class) %>%
+  pull(class)
+
+subdivision_list <- res_filt_sa.join %>%
+  filter(subdivision != "Dinoflagellata") %>%
+  select(subdivision, class) %>%
+  distinct()
+
+g5 <- res_filt_sa.join %>%
+  filter(is_significant_export) %>%
+  filter(subdivision != "Dinoflagellata") %>%
+  complete(class = all_classes) %>%
+  left_join(subdivision_list,by = "class") %>%
+  ggplot(aes(x=fct_rev(class), y=diff.btw_export)) + 
+  geom_point(aes(shape=sediment, size=sediment, fill=subdivision.y), colour="black") +
+  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust=0.5))+
+  scale_fill_manual(values=divisionPalette) +
+  geom_hline(yintercept = 0, linetype="solid") +
+  coord_flip() +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 10),
+        axis.title.x =element_text(size=10),
+        axis.text.y = element_text(size = 8),
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.position = "right"
+        # legend.position = "none"
+        ) +
+  ylab("Median CLR difference - Water CTD <--> Upper fixed traps") +
+  xlab("Class") +
+  ggtitle("Export potential") +
+  theme(strip.text.y = element_blank(),
+        strip.background = element_blank(),
+        panel.spacing.x = unit(0,"lines"),
+        panel.spacing.y = unit(0, "lines"),
+        panel.border = element_blank(),
+        legend.title = element_markdown()) +
+  facet_grid(subdivision.y ~., scales = "free", space = "free", switch = "y") +
+  # scale_shape_manual(values=c(3, 16, 17)) +
+  scale_size_manual(values=c(3, 2.5)) +
+  scale_shape_manual(values = c(24,21))
+g5
+# pdf("deseq_legend.pdf", height= 10, width=7) ; plot(g1) ; dev.off()
+
+g6 <- res_filt_sa.join %>%
+  filter(is_significant_transfer) %>%
+  filter(subdivision != "Dinoflagellata") %>%
+  complete(class = all_classes) %>%
+  left_join(subdivision_list, by = "class") %>%
+  ggplot(aes(x=fct_rev(class), y=diff.btw_transfer)) + 
+  geom_point(aes(shape=sediment, size=sediment, fill=subdivision.y), colour="black") +
+  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust=0.5))+
+  scale_fill_manual(values=divisionPalette) +
+  geom_hline(yintercept = 0, linetype="solid") +
+  coord_flip() +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 10),
+        axis.title.x =element_text(size=10),
+        axis.text.y = element_text(size = 8),
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.position = "right"
+        # legend.position = "none"
+        ) +
+  ylab("Median CLR difference - Upper fixed traps <--> Lower fixed traps") +
+  xlab("Class") +
+  ggtitle("Transfer potential") +
+  theme(strip.text.y = element_blank(),
+        strip.background = element_blank(),
+        panel.spacing.x = unit(0,"lines"),
+        panel.spacing.y = unit(0, "lines"),
+        panel.border = element_blank(),
+        legend.title = element_markdown()) +
+  facet_grid(subdivision.y ~., scales = "free", space = "free", switch = "y") +
+  # scale_shape_manual(values=c(3, 16, 17)) +
+  scale_size_manual(values=c(3, 2.5)) +
+  scale_shape_manual(values = c(24,21))
+g6
+# pdf("deseq_legend.pdf", height= 10, width=7) ; plot(g1) ; dev.off()
+
+
+
+```
+
+###supp - dino
+```{r}
+all_order <- res_filt_sa.join %>%
+  filter(subdivision == "Dinoflagellata") %>%
+  filter(is_significant_export | is_significant_transfer) %>%
+  distinct(order) %>%
+  pull(order)
+
+class_list <- res_filt_sa.join %>%
+  filter(subdivision == "Dinoflagellata") %>%
+  select(class, order) %>%
+  distinct()
+
+g5_dino <- res_filt_sa.join %>%
+  filter(is_significant_export) %>%
+  filter(subdivision == "Dinoflagellata") %>%
+  complete(order = all_order) %>%
+  left_join(class_list, by = "order") %>%
+  ggplot(aes(x=fct_rev(order), y=diff.btw_export)) + 
+  geom_point(aes(shape=sediment, size=sediment, fill=class.y), colour="black") +
+  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust=0.5))+
+  scale_fill_manual(values=divisionPalette) +
+  geom_hline(yintercept = 0, linetype="solid") +
+  coord_flip() +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 10),
+        axis.title.x =element_text(size=10),
+        axis.text.y = element_text(size = 8),
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.position = "right"
+        # legend.position = "none"
+        ) +
+  ylab("Median CLR difference - Water CTD <--> Upper fixed traps") +
+  xlab("Order") +
+  ggtitle("Export potential") +
+  theme(strip.text.y = element_blank(),
+        strip.background = element_blank(),
+        panel.spacing.x = unit(0,"lines"),
+        panel.spacing.y = unit(0, "lines"),
+        panel.border = element_blank(),
+        legend.title = element_markdown()) +
+  facet_grid(class.y ~., scales = "free", space = "free", switch = "y") +
+  # scale_shape_manual(values=c(3, 16, 17)) +
+  scale_size_manual(values=c(3, 2.5)) +
+  scale_shape_manual(values = c(24,21))
+g5_dino
+# pdf("deseq_legend.pdf", height= 10, width=7) ; plot(g1) ; dev.off()
+
+
+g6_dino <- res_filt_sa.join %>%
+  filter(is_significant_transfer) %>%
+  filter(subdivision == "Dinoflagellata") %>%
+  complete(order = all_order) %>%
+  left_join(class_list, by = "order") %>%
+  ggplot(aes(x=fct_rev(order), y=diff.btw_transfer)) + 
+  geom_point(aes(shape=sediment, size=sediment, fill=class.y), colour="black") +
+  theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust=0.5))+
+  scale_fill_manual(values=divisionPalette) +
+  geom_hline(yintercept = 0, linetype="solid") +
+  coord_flip() +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 10),
+        axis.title.x =element_text(size=10),
+        axis.text.y = element_text(size = 8),
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.position = "right"
+        # legend.position = "none"
+        ) +
+  ylab("Median CLR difference - Upper fixed traps <--> Lower fixed traps") +
+  xlab("Order") +
+  ggtitle("Transfer potential") +
+  theme(strip.text.y = element_blank(),
+        strip.background = element_blank(),
+        panel.spacing.x = unit(0,"lines"),
+        panel.spacing.y = unit(0, "lines"),
+        panel.border = element_blank(),
+        legend.title = element_markdown()) +
+  facet_grid(class.y ~., scales = "free", space = "free", switch = "y") +
+  # scale_shape_manual(values=c(3, 16, 17)) +
+  scale_size_manual(values=c(3, 2.5)) +
+  scale_shape_manual(values = c(24,21))
+g6_dino
+# pdf("deseq_legend.pdf", height= 10, width=7) ; plot(g1) ; dev.off()
+
+
+```
+
+### main
+```{r}
+
+g7 <- res_filt_sa.join %>% 
+  filter(subdivision != "Dinoflagellata") %>%
+  filter(is_significant_export & is_significant_transfer) %>%
+  mutate(subdivision = fct_relevel(subdivision,
+                                   "Chlorophyta_X", "Gyrista", "Haptophyta_X", "Prasinodermophyta_X", "Cercozoa", "Choanoflagellata", "Ciliophora", "Radiolaria")) %>%
+  ggplot(aes(x = diff.btw_export, y = diff.btw_transfer)) +
+  geom_point(aes(shape=sediment, fill=subdivision), colour="black", size = 4) +
+  geom_text_repel(
+    data = res_filt_sa.join %>% 
+      filter(!(subdivision %in% c("Dinoflagellata", "Cercozoa", "Choanoflagellata"))) %>%
+      filter(is_significant_export & is_significant_transfer) %>% 
+      filter(sediment == "detected"),
+    aes(label = class, colour = subdivision),
+    size = 3, max.overlaps = 30,
+    box.padding = 0.25,
+    point.padding = 0.3,
+    hjust = "outward",
+    direction = "y")+
+  geom_vline(xintercept = 0, linetype="solid") +  
+  geom_hline(yintercept = 0, linetype="solid") +  
+  xlab("Median CLR difference - Water CTD <--> Upper fixed traps") +
+  ylab("Median CLR difference - Upper <--> Lower fixed traps") +
+  scale_fill_manual(values=divisionPalette) +
+  scale_colour_manual(values=divisionPalette) +
+  theme(axis.text.x = element_text(size = 9),
+        axis.title.x =element_text(size=10),
+        axis.text.y = element_text(size = 9),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 12),
+        # legend.position = "none"
+        ) +
+  scale_shape_manual(values = c(24,21))+
+  coord_fixed() +
+  ggtitle("Subantarctic") +
+  scale_y_continuous(limits = c(-10, 10))+
+  scale_x_continuous(limits = c(-10, 10))
+
+g7
+```
+
+```{r}
+
+g8 <- res_filt_sa.join %>% 
+  filter(subdivision == "Dinoflagellata") %>%
+  filter(is_significant_export & is_significant_transfer) %>%
+  ggplot(aes(x = diff.btw_export, y = diff.btw_transfer)) +
+  geom_point(aes(shape=sediment, size=sediment, fill=class, colour = class)) +
+  geom_text_repel(
+    data = res_filt_sa.join %>% 
+      filter(subdivision == "Dinoflagellata") %>%
+      filter(is_significant_export & is_significant_transfer) %>% 
+      filter(sediment == "detected"),
+    aes(label = order, colour = class),
+    size = 3, max.overlaps = 30,
+    box.padding = 0.25,
+    point.padding = 0.3,
+    hjust = "outward",
+    direction = "y")+
+  geom_vline(xintercept = 0, linetype="solid") +  
+  geom_hline(yintercept = 0, linetype="solid") +  
+  xlab("Median CLR difference - Water CTD <--> Upper fixed traps") +
+  ylab("Median CLR difference - Upper <--> Lower fixed traps") +
+  scale_fill_manual(values=divisionPalette) +
+  scale_colour_manual(values=divisionPalette)+
+  theme(axis.text.x = element_text(size = 9),
+        axis.title.x =element_text(size=10),
+        axis.text.y = element_text(size = 9),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 12),
+        # legend.position = "none"
+        ) +
+  scale_size_manual(values=c(4, 4)) +
+  scale_shape_manual(values = c(24,21))+
+  coord_fixed() +
+  ggtitle("Subantarctic") +
+  scale_y_continuous(limits = c(-10, 10))+
+  scale_x_continuous(limits = c(-10, 10))
+
+g8
+
+```
+
+## SA- ASV raw data supp fig
+```{r}
+
+target_asvs <- res_filt_sa.join %>%
+  filter(subdivision != "Dinoflagellata") %>%
+  filter(is_significant_export & is_significant_transfer) %>%
+  pull(ASV) 
+
+ps_rel <- transform_sample_counts(deseq.sa.filt, function(x) x / sum(x)) %>%
+  psmelt() 
+
+plot_df <- ps_rel %>%
+  filter(OTU %in% target_asvs)  %>%
+  mutate(sample_depth = factor(sample_depth, 
+                               levels = c("water_CTD", "trap_fix_1_2", "trap_fix_3_4"))) %>%
+   mutate(label = paste0(subdivision, " | ", genus, "\n", OTU))
+
+ p <- ggplot(plot_df, aes(x = sample_depth, y = Abundance, fill = sample_depth)) +
+  geom_boxplot(alpha = 0.2, outlier.shape = NA) + 
+  geom_jitter(width = 0.2, shape = 21, size = 3, alpha = 0.75) +
+  facet_wrap(~label, scales = "free_y") + 
+  theme_bw() +
+  ggtitle("Subantarctic - Differentially abundant ASVs")+
+  labs(y = "Relative Abundance", x = "Sample Depth")+
+   theme(
+    axis.text.x = element_text(angle = 45, hjust = 1), 
+    legend.text = element_text(size = 12),
+  legend.title = element_text(size = 14),
+  legend.key.size = unit(1.5, "lines"))  
+p
+ # pdf("aldex_sa_raw rel abund.pdf", height= 9, width=17) ; plot(p) ; dev.off()
+```
+
+
+# Supplementrary figs
+```{r}
+p <- (g1 | g2) + plot_annotation(tag_levels = 'A') + plot_layout(guides = 'collect')  + plot_annotation(
+  title = 'Subtropical'
+)
+p
+pdf("aldex_export transfer_ST.pdf", height= 7, width=10) ; plot(p) ; dev.off()
+
+p <- (g5 | g6) + plot_annotation(tag_levels = 'A') + plot_layout(guides = 'collect')  + plot_annotation(
+  title = 'Subantarctic'
+)
+p
+pdf("aldex_export transfer_SA.pdf", height= 7, width=10) ; plot(p) ; dev.off()
+
+p <- (g1_dino | g2_dino) + plot_annotation(tag_levels = 'A') + plot_layout(guides = 'collect')  + plot_annotation(
+  title = 'Subtropical'
+)
+p
+pdf("aldex_export transfer_ST_dino.pdf", height= 7, width=10) ; plot(p) ; dev.off()
+
+p <- (g5_dino | g6_dino) + plot_annotation(tag_levels = 'A') + plot_layout(guides = 'collect')  + plot_annotation(
+  title = 'Subantarctic'
+)
+p
+pdf("aldex_export transfer_SA_dino.pdf", height= 7, width=10) ; plot(p) ; dev.off()
+```
+
+# Main figure 7: deseq output
+```{r}
+
+g3 <- g3 + guides(fill = "none", colour = "none", shape = "none", size = "none")
+g4 <- g4 + guides(fill = "none", colour = "none", shape = "none", size = "none")
+g7 <- g7 + guides(fill = "none", colour = "none", shape = "none", size = "none")
+g8 <- g8 + guides(fill = "none", colour = "none", shape = "none", size = "none")
+
+p <- (g3 | g7) / (g4 | g8) + plot_annotation(tag_levels = 'A')
+p
+pdf("aldex_mainv2.pdf", height= 9, width=9) ; plot(p) ; dev.off()
+
+
+```
+
+# summary tables
+```{r}
+
+res_summary_st <- res_filt_st.join %>% 
+  filter(is_significant_export & is_significant_transfer) %>%
+  select(ASV, domain:species)
+
+res_summary_sa <- res_filt_sa.join %>% 
+  filter(is_significant_export & is_significant_transfer) %>%
+  select(ASV, domain:species)
+
+res_summary <- full_join(res_summary_st, res_summary_sa) %>%
+  full_join(core_asvs %>% select(ASV, sediment)) %>%
+  filter(!(is.na(division))) %>%
+  distinct()
+
+res_summary %>% group_by(subdivision,class) %>% summarise(count = n())
+
+res_summary %>% group_by(sediment) %>% summarise(count = n()) 
+```
+
+## Number of common and uunique ASVs for water mass
+```{r}
+ST_asvs <- res_filt_st.join %>% 
+  filter(is_significant_export & is_significant_transfer) %>%
+  select(ASV) %>%
+  mutate(water_mass = "ST")
+SA_asvs <- res_filt_sa.join %>% 
+  filter(is_significant_export & is_significant_transfer) %>%
+  select(ASV) %>%
+  mutate(water_mass = "SA")
+
+wm_asvs <- full_join(ST_asvs, SA_asvs) 
+
+# number of common and unique ASVs per water mass from deseq analysis
+upset_df <- wm_asvs %>%
+  mutate(n=1) %>%
+  pivot_wider(names_from = water_mass,
+              values_fill = 0,
+              values_from = n) %>%
+  data.frame() # this part is important at the end of forming the df if not will have error later
+
+fig_upset_asv <- UpSetR::upset(upset_df, 
+                                # nsets = 5,
+                                # empty.intersections = "off", 
+                                # nintersects = 23,
+                                # number.angles = 30, 
+                                # point.size = 10, 
+                                # line.size = 4, 
+                                mainbar.y.label = "ASV number", 
+                                sets.x.label = "ASVs", 
+                                order.by = "freq", 
+                                # text.scale = c(3), 
+                                mb.ratio = c(0.6, 0.4))
+fig_upset_asv
+
+```
+
+## Supplementary table S3 - Number of ASVs by taxa, shared and common between water mass 
+```{r}
+taxa <- as.data.frame(ps@tax_table)
+asv_df <- upset_df %>%
+  mutate(group = case_when(ST == 1 & SA == 1 ~ "both",
+                           ST == 1 & SA == 0 ~ "ST",
+                           ST == 0 & SA == 1 ~ "SA")) %>%
+  left_join(taxa)%>%
+  full_join(core_asvs %>% select(ASV, sediment)) %>%
+  filter(!(is.na(group))) %>%
+  distinct() %>%
+  mutate(sediment = coalesce(sediment, "not detected"))  # label sediment ASVs
+
+# list of unique or shared ASVs between the groups
+summary <- asv_df %>%
+  # filter(ST == 1) %>%
+  group_by(group,subdivision,class, order) %>%
+  summarise(n=n()) %>%
+  pivot_wider(names_from = group, values_from = n, values_fill = 0) %>%
+  mutate(total = ST+SA+both) %>%
+  arrange(subdivision, class, desc(total))
+writexl::write_xlsx(summary, "aldex_taxa_summary.xlsx")
+
+```
+
+## number of ASVs detected in the sediments
+```{r}
+summary <- asv_df %>%
+  group_by(sediment, subdivision) %>%
+  summarise(n=n()) %>%
+  ungroup() %>%
+  pivot_wider(names_from = "sediment", values_from = "n", values_fill = 0) %>%
+  mutate(prop = detected / (detected + `not detected`)*100)
+
+summary %>%
+  summarise(
+    detected_total = sum(detected, na.rm = TRUE),
+    not_detected_total = sum(`not detected`, na.rm = TRUE),
+    prop_total = detected_total / (detected_total + not_detected_total)
+  )
+```
+

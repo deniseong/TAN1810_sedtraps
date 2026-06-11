@@ -29,8 +29,8 @@ library(lubridate)
 library("DESeq2")
 library("pheatmap")
 library("RColorBrewer")
-library("apeglm")
-library("DEGreport")
+# library("apeglm")
+# library("DEGreport")
 
 set.seed(1)
 

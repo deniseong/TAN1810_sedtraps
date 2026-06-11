@@ -346,6 +346,31 @@ ps_filt
 check <- as.data.frame(ps_filt@tax_table)
 ```
 
+
+# sequencing depth statistics
+```{r}
+depth <- sample_sums(ps_filt)
+
+summary <- data.frame(
+  Sample = names(depth),
+  Reads = depth
+)
+
+writexl::write_xlsx(summary, "sequencing_depth_samples.xlsx")
+
+data.frame(
+  Metric = c("Min", "Max", "Mean", "Median", "SD", "Total"),
+  Value = c(
+    min(depth),
+    max(depth),
+    mean(depth),
+    median(depth),
+    sd(depth),
+    sum(depth)
+  )
+)
+```
+
 # Diversity
 From now, working with phyloseq ps, after removing duplicates.
 

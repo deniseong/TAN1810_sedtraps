@@ -1,4 +1,4 @@
-"ST1", "ST2", "SA-Sc", "SA1", "SA2"---
+---
 title: "NMDS"
 author: "Denise Ong"
 date: "5/22/2023"
@@ -12,7 +12,7 @@ Note: more separation by sample type instead of sampling location. But some loca
 ```{r, echo=TRUE, message=FALSE, warning=FALSE}
 library(here)
 source(here("init_files", "init.R")) #for libraries
-source(here("init_files", "init_markdown.R")) #for markdown libraries
+# source(here("init_files", "init_markdown.R")) #for markdown libraries
 source(here("init_files", "define_functions.R")) #functions to 1.transform to dataframe, 2.normalise and 3.create treemaps 
 # source(here("init_files", "colours_random.R")) # for colours, using Rcolourbrewer
 # cbp1 <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7") #another colour-blind palette, if the previous palatte has colours that are too close together.
@@ -57,21 +57,6 @@ otu <- psotu2veg(ps)
 #sample list of filt samples
 sample_list <- sample %>%
   select(sample_name)
-
-# subset removed groups and samples from the plot
-otu_sub <- otu %>%
-  as.data.frame() 
-otu_sub$sample_name <-rownames(otu_sub)
-
-otu_sub <- otu_sub %>% 
-  inner_join(., sample_list)
-
-rownames(otu_sub) <- otu_sub$sample_name
-
-otu_sub <- otu_sub %>%
-  select(-sample_name) %>%
-  as.matrix()
-
 ```
 
 
@@ -79,7 +64,7 @@ otu_sub <- otu_sub %>%
 ```{r,eval=FALSE}
 #to check for every sample number of reads and if all asvs have reads -  ok, ignore code now.
 
-otu_long <- otu_sub %>%
+otu_long <- otu %>%
   as.data.frame() 
 otu_long$file_code <-rownames(otu_long)
 otu_long <- otu_long %>%
@@ -88,20 +73,101 @@ otu_long <- otu_long %>%
     # group_by(otu) %>% # count reads of asvs
     summarise(sum = sum(reads))
 otu_long
+writexl::write_xlsx(otu_long, ""
 ```
 
+## rarefaction curve
 ```{r, eval=FALSE}
 
-p <- rarecurve(otu_sub, step = 40, label = FALSE)
+p <- rarecurve(otu, step = 40, label = FALSE)
+p
+# 
+# 
+# graphics.off()
+# pdf("rare curve_all samples.pdf", width=7, height=5)
+# rarecurve(otu, step=40, label=FALSE, 
+#           xlab = "Sample size",
+#           ylab = "Number of ASVs")
+# dev.off()
 
-pdf("rare curve.pdf", height= 6, width=6) ; plot(p) ; dev.off()
+
+```
+
+
+### rarecurve for live traps
+```{r}
+ps_sub <- ps %>%
+  ps_filter(sample == "trap_live")
+
+ps_sub
+otu_sub <- psotu2veg(ps_sub)
+
+rarecurve(otu_sub, step = 40, label = FALSE)
+
+# cycles <- c("C2", "C3", "C4", "C5") 
+# 
+# #subset samples for each cycle
+# d_c2 <- otu_sub[grep("C2", rownames(otu_sub)), ]
+# d_c3 <- otu_sub[grep("C3", rownames(otu_sub)), ]
+# d_c4 <- otu_sub[grep("C4", rownames(otu_sub)), ]
+# d_c5 <- otu_sub[grep("C5", rownames(otu_sub)), ]
+# 
+# 
+# # pool the asv counts for each cycle
+# pool_c2 <- colSums(d_c2)
+# pool_c3 <- colSums(d_c3)
+# pool_c4 <- colSums(d_c4)
+# pool_c5 <- colSums(d_c5)
+# 
+# # Combine them back into a single matrix where each row is a Cycle
+# pooled_otu <- rbind(pool_c2, pool_c3, pool_c4, pool_c5)
+# rownames(pooled_otu) <- c("C2", "C3", "C4", "C5")
+
+# rarecurve(pooled_otu, 
+#           step = 40, 
+#           lwd = 2, 
+#           label = TRUE,         
+#           xlab = "Sample size", 
+#           ylab = "Number of ASVs")
+
+```
+
+```{r}
+# save plot
+graphics.off()
+pdf("rarefaction_combined.pdf", width = 8, height = 10) # Made it taller for 2 plots
+par(mfrow = c(2, 1))
+rarecurve(otu, 
+          step = 40, 
+          label = FALSE, 
+          xlab = "Sample size", 
+          ylab = "Number of ASVs",
+          main = "All samples")
+
+rarecurve(otu_sub, 
+          step = 40, 
+          label = FALSE, 
+          xlab = "Sample size", 
+          ylab = "Number of ASVs",
+          main = "Live trap samples")
+
+# rarecurve(pooled_otu, 
+#           step = 40, 
+#           lwd = 2, 
+#           label = TRUE, 
+#           xlab = "Sample size", 
+#           ylab = "Number of ASVs",
+#           main = "Pooled by cycles for live trap samples",
+#           xlim = c(0, max(rowSums(pooled_otu)) * 1.1))
+
+dev.off()
 
 ```
 
 ## NMDS
 ```{r}
 
-dist <- avgdist(otu_sub, sample = 1066, dmethod = "bray") #rarify to control for uneven number of reads per sample. lowest number of reads in a sample is 1066.
+dist <- avgdist(otu, sample = 1066, dmethod = "bray") #rarify to control for uneven number of reads per sample. lowest number of reads in a sample is 1066.
 
 nmds_sub<- metaMDS(dist)
 
@@ -134,550 +200,26 @@ nmds_sample <- nmds_sample_sub %>%
 
 nmds_sample
 
-pdf("nmds_samples.pdf", height=5, width=6.5) ; plot(nmds_sample) ; dev.off()
+# pdf("nmds_samples.pdf", height=5, width=6.5) ; plot(nmds_sample) ; dev.off()
 ```
 
-## PERMANOVA
 
 ```{r}
-dist_df <- as.data.frame(as.matrix(dist))
-dist_df$sample_name <-rownames(dist_df) #row names to column
-rownames(dist_df) <- c() #remove row names
-meta_dist <-  inner_join(sample, dist_df, by = "sample_name") #join with the metdata
-all_dist <- dist_df %>%
-    select(all_of(.[["sample_name"]])) %>%
-    as.dist() #something to change to a distance matrix for adonis
-
-adonis2(all_dist~sample+water_mass, data=meta_dist)
-pairwiseAdonis::pairwise.adonis(all_dist, factors = meta_dist$water_mass)
-pairwiseAdonis::pairwise.adonis(all_dist, factors = meta_dist$sample)
-# adonis2(all_dist~sample+cycle_name_2, data=meta_dist)
-# pairwiseAdonis::pairwise.adonis(all_dist, factors = meta_dist$cycle_name_2)
-
-
-# betadisper analysis
-bd <- betadisper(all_dist, meta_dist$sample)
-anova(bd)
-permutest(bd)
-meta_dist %>% count(sample)
-
-## Tukey's Honest Significant Differences
-(mod.HSD <- TukeyHSD(bd))
-plot(mod.HSD)
-
-# meta_dist %>% group_by(sample) %>% count(sample)
-```
-
-# Water CTD
-```{r}
-sample <- data.frame(ps@sam_data) %>%
-  filter(sample == "water_CTD")
-
-otu <- psotu2veg(ps)
-
-#sample list of filt samples
-sample_list <- sample %>%
-  select(sample_name)
-
-# subset removed groups and samples from the plot
-otu_sub <- otu %>%
-  as.data.frame() 
-otu_sub$sample_name <-rownames(otu_sub)
-
-otu_sub <- otu_sub %>% 
-  inner_join(., sample_list)
-
-rownames(otu_sub) <- otu_sub$sample_name
-
-otu_sub <- otu_sub %>%
-  select(-sample_name) %>%
-  as.matrix()
-```
-
-checks before plotting - ok, ignore for now.
-```{r, eval=FALSE}
-#to check for every sample number of reads and if all asvs have reads -  ok, ignore code now.
-
-otu_long <- otu_sub %>%
-  as.data.frame() 
-otu_long$file_code <-rownames(otu_long)
-otu_long <- otu_long %>%
-    pivot_longer(cols = !file_code, names_to = "otu", values_to = "reads") %>%
-    group_by(file_code) %>% # count rads of each sample
-    # group_by(otu) %>% # count reads of asvs
-    summarise(sum = sum(reads))
-otu_long
-```
-
-NMDS
-```{r}
-dist <- avgdist(otu_sub, sample = 12623, dmethod = "bray") #rarify to control for uneven number of reads per sample. 
-
-nmds_sub<- metaMDS(dist)
-
-nmds_sample_sub <- scores(nmds_sub) %>%
-    as.tibble(rownames="sample_name") %>%
-    inner_join(., sample, by = "sample_name")
-
-goodness(nmds_sub)
-stressplot(nmds_sub)
-
-nmds_sub$stress
-
-#plot by cycle and depth
-ctd<- nmds_sample_sub %>%
-    mutate(cycle_name_2 = fct_relevel(cycle_name_2, "ST1", "ST2", "SA-Sc", "SA1", "SA2" )) %>%
-    ggplot() +
-    stat_ellipse(aes(x=NMDS1, y= NMDS2, linetype = water_mass)) +
-    geom_point(aes(x=NMDS1, y= NMDS2, colour = cycle_name_2)) +
-    scale_colour_manual(values = colours_cycle) +
-    theme_classic() +
-    theme(legend.position = "right")  +
-  ggtitle("Upper water column")# +
-  # annotate("text", x = 0.5, y = -0.3, label = "Stress = 0.13")
-
-ctd
-
-# pdf("nmds_live traps.pdf", height=6, width=7) ; plot(nmds) ; dev.off()
-```
-
-PERMANOVA
-```{r}
-dist_df <- as.data.frame(as.matrix(dist))
-dist_df$sample_name <-rownames(dist_df) #row names to column
-rownames(dist_df) <- c() #remove row names
-meta_dist <-  inner_join(sample, dist_df, by = "sample_name") #join with the metdata
-all_dist <- dist_df %>%
-    select(all_of(.[["sample_name"]])) %>%
-    as.dist() #something to change to a distance matrix for adonis
-
-# meta_dist %>% group_by(water_mass) %>% count(sample)
-
-# no diff for depth and size fraction
-adonis2(all_dist~water_mass, data=meta_dist)
-pairwiseAdonis::pairwise.adonis(all_dist, factors = meta_dist$water_mass)
-
-# bd <- betadisper(all_dist, meta_dist$cycle_name_2)
-# anova(bd) #p=0.001
-# permutest(bd)
-# meta_dist %>% count(cycle_name_2)
-# 
-# ## Tukey's Honest Significant Differences
-# (mod.HSD <- TukeyHSD(bd)) #SA3-SA2 p=0.002, SA1-SA2 p=0.007
-```
-
-
-# water pump
-```{r}
-sample <- data.frame(ps@sam_data) %>%
-    filter(sample == "water_pump")
-
-otu <- psotu2veg(ps)
-
-
-#sample list of filt samples
-sample_list <- sample %>%
-  select(sample_name)
-
-# subset removed groups and samples from the plot
-otu_sub <- otu %>%
-  as.data.frame() 
-otu_sub$sample_name <-rownames(otu_sub)
-
-otu_sub <- otu_sub %>% 
-  inner_join(., sample_list)
-
-rownames(otu_sub) <- otu_sub$sample_name
-
-otu_sub <- otu_sub %>%
-  select(-sample_name) %>%
-  as.matrix()
-
-# rarecurve(otu_sub, step = 40, label = FALSE)
-
-```
-
-checks before plotting - ok, ignore for now.
-```{r, eval=FALSE}
-#to check for every sample number of reads and if all asvs have reads -  ok, ignore code now.
-
-otu_long <- otu_sub %>%
-  as.data.frame() 
-otu_long$file_code <-rownames(otu_long)
-otu_long <- otu_long %>%
-    pivot_longer(cols = !file_code, names_to = "otu", values_to = "reads") %>%
-    group_by(file_code) %>% # count rads of each sample
-    # group_by(otu) %>% # count reads of asvs
-    summarise(sum = sum(reads))
-otu_long
-```
-
-PERMANOVA
-```{r}
-dist <- avgdist(otu_sub, sample = 12000, dmethod = "bray") #rarify to control for uneven number of reads per sample. 
-
-nmds_sub<- metaMDS(dist)
-
-nmds_sample_sub <- scores(nmds_sub) %>%
-    as.tibble(rownames="sample_name") %>%
-    inner_join(., sample, by = "sample_name")
-
-goodness(nmds_sub)
-stressplot(nmds_sub)
-
-nmds_sub$stress
-
-#plot by cycle and depth
-ctd<- nmds_sample_sub %>%
-    # mutate(cycle_name = fct_relevel(cycle_name, "ST1", "ST2", "SA1-A", "SA1-B","SA2","SA3" )) %>%
-    mutate(cycle_name_2 = fct_relevel(cycle_name_2, "ST1", "ST2", "SA1", "SA2","SA3" )) %>%
-    ggplot() +
-    stat_ellipse(aes(x=NMDS1, y= NMDS2, 
-                     colour = water_mass)
-                     #,linetype = water_mass)
-                 # , level = 0.75
-                 ) +
-    geom_point(aes(x=NMDS1, y= NMDS2, colour = cycle_name_2
-                   # ,
-                   # shape = fct_rev(depth_category)
-                   # shape = fraction_name
-                   )) +
-    scale_colour_manual(values = colours_cycle) +
-    # scale_shape_manual(values=c(0,1, 15, 17, 19)) + # shapes for cycle
-    # scale_shape_manual(values=c(1, 19)) + # shapes for water masss=
-    theme_classic() +
-    theme(legend.position = "right") 
-  # ggtitle("Lower water column (70 to 540 m)") +
-  # annotate("text", x = 1.2, y = -0.3, label = "Stress = 0.13")
-
-ctd
-
-# pdf("nmds_pump.pdf", height=6, width=7) ; plot(nmds) ; dev.off()
-
-```
-
-```{r}
-dist_df <- as.data.frame(as.matrix(dist))
-dist_df$sample_name <-rownames(dist_df) #row names to column
-rownames(dist_df) <- c() #remove row names
-meta_dist <-  inner_join(sample, dist_df, by = "sample_name") #join with the metdata
-all_dist <- dist_df %>%
-    select(all_of(.[["sample_name"]])) %>%
-    as.dist() #something to change to a distance matrix for adonis
-
-# meta_dist %>% group_by(water_mass) %>% count(sample)
-
-# PERMANOVA based on cycle, not sure if there is too little samples for this.
-adonis2(all_dist~water_mass, data=meta_dist) # adjusted pairwise p values are not significant. I think it is because there are too many groups.
-
-pairwiseAdonis::pairwise.adonis(all_dist, factors = meta_dist$water_mass)
-
-# bd <- betadisper(all_dist, meta_dist$cycle_name_2)
-# anova(bd)
-# permutest(bd)
-# meta_dist %>% count(cycle_name_2)
-
-## Tukey's Honest Significant Differences
-# (mod.HSD <- TukeyHSD(bd))
-# plot(mod.HSD)
-
-# # PERMANOVA based on water mass ST vs SA
-# adonis2(all_dist~water_mass*depth_category_2, data=meta_dist)
-# 
-# pairwiseAdonis::pairwise.adonis(all_dist, factors = meta_dist$depth_category_2)
-# 
-# bd <- betadisper(all_dist, meta_dist$depth_category)
-# anova(bd)
-# permutest(bd)
-# meta_dist %>% count(water_mass)
-
-```
-
-# Fixed traps
-```{r}
-sample <- data.frame(ps@sam_data) %>%
-  filter(sample == "trap_fix") #%>%
-  # filter(fraction_name != "pico-nano") %>%
-  # filter(fraction_name != "total")
-
-otu <- psotu2veg(ps)
-
-
-#sample list of filt samples
-sample_list <- sample %>%
-  select(sample_name)
-
-# subset removed groups and samples from the plot
-otu_sub <- otu %>%
-  as.data.frame() 
-otu_sub$sample_name <-rownames(otu_sub)
-
-otu_sub <- otu_sub %>% 
-  inner_join(., sample_list)
-
-rownames(otu_sub) <- otu_sub$sample_name
-
-otu_sub <- otu_sub %>%
-  select(-sample_name) %>%
-  as.matrix()
-```
-
-checks before plotting - ok, ignore for now.
-```{r, eval=FALSE}
-#to check for every sample number of reads and if all asvs have reads -  ok, ignore code now.
-
-otu_long <- otu_sub %>%
-  as.data.frame() 
-otu_long$file_code <-rownames(otu_long)
-otu_long <- otu_long %>%
-    pivot_longer(cols = !file_code, names_to = "otu", values_to = "reads") %>%
-    group_by(file_code) %>% # count rads of each sample
-    # group_by(otu) %>% # count reads of asvs
-    summarise(sum = sum(reads))
-otu_long
-```
-
-PERMANOVA
-```{r}
-dist <- avgdist(otu_sub, sample = 7000, dmethod = "bray") #rarify to control for uneven number of reads per sample. 
-
-nmds_sub<- metaMDS(dist)
-
-nmds_sample_sub <- scores(nmds_sub) %>%
-    as.tibble(rownames="sample_name") %>%
-    inner_join(., sample, by = "sample_name")
-
-goodness(nmds_sub)
-stressplot(nmds_sub)
-
-nmds_sub$stress
-
-#plot by cycle and depth
-fix <- nmds_sample_sub %>%
-    mutate(cycle_name_2 = fct_relevel(cycle_name_2, "ST1", "ST2", "SA-Sc", "SA1","SA2" )) %>%
-    ggplot() +
-    geom_point(aes(x=NMDS1, y= NMDS2, 
-                   colour = cycle_name_2,
-                   shape = fraction_name
-                   )) +
-  stat_ellipse(aes(x=NMDS1, y= NMDS2, 
-                     colour = water_mass)
-                     #,linetype = water_mass)
-                 # , level = 0.75
-                 ) +
-    scale_colour_manual(values = colours_cycle) +
-    # scale_shape_manual(values=c(19, 0, 2)) + #shapes for size fraction
-    theme_classic() +
-    theme(legend.position = "right")  +
-  # annotate("text", x = 0.5, y = -0.3, label = "Stress = 0.21") +
-  ggtitle("Fixed traps")
-
-fix
-```
-
-```{r}
-dist_df <- as.data.frame(as.matrix(dist))
-dist_df$sample_name <-rownames(dist_df) #row names to column
-rownames(dist_df) <- c() #remove row names
-meta_dist <-  inner_join(sample, dist_df, by = "sample_name") #join with the metdata
-all_dist <- dist_df %>%
-    select(all_of(.[["sample_name"]])) %>%
-    as.dist() #something to change to a distance matrix for adonis
-
-# meta_dist %>% group_by(fraction_name) %>% count(sample)
-
-adonis2(all_dist~water_mass, data=meta_dist) #p=0.043
-pairwiseAdonis::pairwise.adonis(all_dist, factors = meta_dist$water_mass)
-
-# bd <- betadisper(all_dist, meta_dist$fraction_name)
-# anova(bd)
-# permutest(bd)
-# meta_dist %>% count(fraction_name)
-# 
-# ## Tukey's Honest Significant Differences
-# (mod.HSD <- TukeyHSD(bd))
-# plot(mod.HSD)
-
-```
-# Live traps
-```{r}
-sample <- data.frame(ps@sam_data) %>%
-  filter(sample == "trap_live") #%>%
-  # filter(fraction_name != "pico-nano") %>%
-  # filter(fraction_name != "total")
-
-otu <- psotu2veg(ps)
-
-
-#sample list of filt samples
-sample_list <- sample %>%
-  select(sample_name)
-
-# subset removed groups and samples from the plot
-otu_sub <- otu %>%
-  as.data.frame() 
-otu_sub$sample_name <-rownames(otu_sub)
-
-otu_sub <- otu_sub %>% 
-  inner_join(., sample_list)
-
-rownames(otu_sub) <- otu_sub$sample_name
-
-otu_sub <- otu_sub %>%
-  select(-sample_name) %>%
-  as.matrix()
-```
-
-checks before plotting - ok, ignore for now.
-```{r, eval=FALSE}
-#to check for every sample number of reads and if all asvs have reads -  ok, ignore code now.
-
-otu_long <- otu_sub %>%
-  as.data.frame() 
-otu_long$file_code <-rownames(otu_long)
-otu_long <- otu_long %>%
-    pivot_longer(cols = !file_code, names_to = "otu", values_to = "reads") %>%
-    group_by(file_code) %>% # count rads of each sample
-    # group_by(otu) %>% # count reads of asvs
-    summarise(sum = sum(reads))
-otu_long
-```
-
-PERMANOVA
-```{r}
-dist <- avgdist(otu_sub, sample = 1400, dmethod = "bray") #rarify to control for uneven number of reads per sample. 
-
-dist_df <- as.data.frame(as.matrix(dist))
-dist_df$sample_name <-rownames(dist_df) #row names to column
-rownames(dist_df) <- c() #remove row names
-meta_dist <-  inner_join(sample, dist_df, by = "sample_name") #join with the metdata
-all_dist <- dist_df %>%
-    select(all_of(.[["sample_name"]])) %>%
-    as.dist() #something to change to a distance matrix for adonis
-
-# meta_dist %>% group_by(fraction_name) %>% count(sample)
-
-adonis2(all_dist~water_mass, data=meta_dist) #p=0.001
-```
-# Sediments
-```{r}
-sample <- data.frame(ps@sam_data) %>%
-  filter(sample == "core") 
-
-otu <- psotu2veg(ps)
-
-
-#sample list of filt samples
-sample_list <- sample %>%
-  select(sample_name)
-
-# subset removed groups and samples from the plot
-otu_sub <- otu %>%
-  as.data.frame() 
-otu_sub$sample_name <-rownames(otu_sub)
-
-otu_sub <- otu_sub %>% 
-  inner_join(., sample_list)
-
-rownames(otu_sub) <- otu_sub$sample_name
-
-otu_sub <- otu_sub %>%
-  select(-sample_name) %>%
-  as.matrix()
-```
-
-checks before plotting - ok, ignore for now.
-```{r, eval=FALSE}
-#to check for every sample number of reads and if all asvs have reads -  ok, ignore code now.
-
-otu_long <- otu_sub %>%
-  as.data.frame() 
-otu_long$file_code <-rownames(otu_long)
-otu_long <- otu_long %>%
-    pivot_longer(cols = !file_code, names_to = "otu", values_to = "reads") %>%
-    group_by(file_code) %>% # count rads of each sample
-    # group_by(otu) %>% # count reads of asvs
-    summarise(sum = sum(reads))
-otu_long
-```
-
-PERMANOVA
-```{r}
-dist <- avgdist(otu_sub, sample = 11102, dmethod = "bray") #rarify to control for uneven number of reads per sample. 
-
-dist_df <- as.data.frame(as.matrix(dist))
-dist_df$sample_name <-rownames(dist_df) #row names to column
-rownames(dist_df) <- c() #remove row names
-meta_dist <-  inner_join(sample, dist_df, by = "sample_name") #join with the metdata
-all_dist <- dist_df %>%
-    select(all_of(.[["sample_name"]])) %>%
-    as.dist() #something to change to a distance matrix for adonis
-
-# meta_dist %>% group_by(fraction_name) %>% count(sample)
-
-adonis2(all_dist~water_mass, data=meta_dist) #p=0.001
-```
-# For presentation - exclude live traps
-```{r}
-sample <- data.frame(ps@sam_data) %>%
-  filter(sample != "trap_live") #%>%
-  # filter(sample != "core")
-
-otu <- psotu2veg(ps)
-
-
-#sample list of filt samples
-sample_list <- sample %>%
-  select(sample_name)
-
-# subset removed groups and samples from the plot
-otu_sub <- otu %>%
-  as.data.frame() 
-otu_sub$sample_name <-rownames(otu_sub)
-
-otu_sub <- otu_sub %>% 
-  inner_join(., sample_list)
-
-rownames(otu_sub) <- otu_sub$sample_name
-
-otu_sub <- otu_sub %>%
-  select(-sample_name) %>%
-  as.matrix()
-
-# rarecurve(otu_sub, step = 40, label = FALSE)
-
-```
-
-checks before plotting - ok, ignore for now.
-```{r, eval=FALSE}
-#to check for every sample number of reads and if all asvs have reads -  ok, ignore code now.
-
-otu_long <- otu_sub %>%
-  as.data.frame() 
-otu_long$file_code <-rownames(otu_long)
-otu_long <- otu_long %>%
-    pivot_longer(cols = !file_code, names_to = "otu", values_to = "reads") %>%
-    group_by(file_code) %>% # count rads of each sample
-    # group_by(otu) %>% # count reads of asvs
-    summarise(sum = sum(reads))
-otu_long
-```
-
-PERMANOVA
-```{r}
-dist <- avgdist(otu_sub, sample = 7218, dmethod = "bray") #rarify to control for uneven number of reads per sample. 
-
-nmds_sub<- metaMDS(dist)
-
-nmds_sample_sub <- scores(nmds_sub) %>%
-    as.tibble(rownames="sample_name") %>%
-    inner_join(., sample, by = "sample_name")
-
-goodness(nmds_sub)
-stressplot(nmds_sub)
-
-nmds_sub$stress
-
+set.seed(1)
+# dist.bray <- avgdist(otu, sample = 2446, dmethod = "bray") #rarify to control for uneven number of reads per sample.
+# nmds<- metaMDS(dist.bray)
+asv_hel <- decostand(otu, "hellinger") #raw counts, not transformed
+nmds <- metaMDS(asv_hel, distance = "bray", autotransform = FALSE)
+# nmds<- metaMDS(otu, distance ="bray")
+
+goodness(nmds)
+stressplot(nmds)
+
+nmds$stress
+
+nmds_sample <- as.data.frame(scores(nmds)$sites) %>%
+  as.tibble(rownames="sample_name") %>%
+  inner_join(., sample, by = "sample_name")
 
 #plot by sample type
 nmds_sample <- nmds_sample_sub %>%
@@ -686,20 +228,26 @@ nmds_sample <- nmds_sample_sub %>%
     ggplot() +
     stat_ellipse(aes(x=NMDS1, y= NMDS2, colour = sample)) +
     geom_point(aes(x=NMDS1, y= NMDS2, colour = sample, shape = cycle_name_2
-                   )) +
+                   ), size =2.5) +
     scale_colour_manual(values = sample_palette) +
     scale_shape_manual(values=c(3,7,16,17,15)) + # shapes for cycle
-    theme(legend.position = "right") +
-    annotate("text", x = 0.3, y = -0.5, label = "Stress = 0.17")
+    theme(legend.position = "right",
+        axis.text.x = element_text(size = 10),
+        axis.title.x =element_text(size=13),
+        axis.text.y = element_text(size = 10),
+        axis.title.y =element_text(size=13)) +
+    annotate("text", x = 0.3, y = -0.5, label = "Stress = 0.20", size = 5)
 
 
 nmds_sample
 
-pdf("presentation_nmds.pdf", height=6, width=7) ; plot(nmds_sample) ; dev.off()
 
 ```
 
+## PERMANOVA
+
 ```{r}
+dist <- vegdist(asv_hel, method = "bray")
 dist_df <- as.data.frame(as.matrix(dist))
 dist_df$sample_name <-rownames(dist_df) #row names to column
 rownames(dist_df) <- c() #remove row names
@@ -708,32 +256,160 @@ all_dist <- dist_df %>%
     select(all_of(.[["sample_name"]])) %>%
     as.dist() #something to change to a distance matrix for adonis
 
-meta_dist %>%  dplyr::count(sample)
+adonis2(all_dist~sample, data=meta_dist)
+adonis2(all_dist~water_mass, data=meta_dist)
 
-# PERMANOVA based on cycle, not sure if there is too little samples for this.
-adonis2(all_dist~sample, data=meta_dist) # adjusted pairwise p values are not significant. I think it is because there are too many groups.
-
+pairwiseAdonis::pairwise.adonis(all_dist, factors = meta_dist$water_mass)
 pairwiseAdonis::pairwise.adonis(all_dist, factors = meta_dist$sample)
+# adonis2(all_dist~sample+cycle_name_2, data=meta_dist)
+# pairwiseAdonis::pairwise.adonis(all_dist, factors = meta_dist$cycle_name_2)
 
+
+# betadisper analysis - sample type
 bd <- betadisper(all_dist, meta_dist$sample)
 anova(bd)
 permutest(bd)
-meta_dist %>% count(sample)
-
-## Tukey's Honest Significant Differences
-(mod.HSD <- TukeyHSD(bd))
-plot(mod.HSD)
-
-# # PERMANOVA based on water mass ST vs SA
-# adonis2(all_dist~water_mass*sample, data=meta_dist)
-adonis2(all_dist~water_mass+sample, data=meta_dist)
+permutest(bd, pairwise = TRUE) # pairwise betadisper indicates sw monsoon is significantly more homogenous 
 
 
-pairwiseAdonis::pairwise.adonis(all_dist, factors = meta_dist$sample)
-# 
-bd <- betadisper(all_dist, meta_dist$sample)
+
+# betadisper analysis - water mass
+bd <- betadisper(all_dist, meta_dist$water_mass)
 anova(bd)
 permutest(bd)
-# meta_dist %>% count(water_mass)
 
-``` 
+
+# meta_dist %>% count(sample)
+
+# # Tukey's Honest Significant Differences
+# (mod.HSD <- TukeyHSD(bd))
+# plot(mod.HSD)
+
+# meta_dist %>% group_by(sample) %>% count(sample)
+```
+
+```{r}
+# 1. add pseudocount
+otu_table(ps) <- otu_table(ps) + 1
+
+# 2. CLR transform
+physeq_clr <- microbiome::transform(ps, "clr")
+
+# 3. extract matrix
+clr_matrix <- t(otu_table(physeq_clr))
+
+# 4. PCA
+pca <- prcomp(clr_matrix, scale. = FALSE)
+
+# variance explained
+var_exp <- (pca$sdev^2 / sum(pca$sdev^2)) * 100
+
+# 5. build plotting dataframe
+meta <- data.frame(sample_data(ps))
+
+pca_df <- data.frame(
+  PC1 = pca$x[,1],
+  PC2 = pca$x[,2],
+  sample = meta$sample,
+  water_mass = meta$water_mass
+)
+
+# 6. compute centroids
+centroids <- pca_df %>%
+  group_by(sample) %>%
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2)
+  )
+
+# 7. Aitchison distance
+aitchison <- dist(clr_matrix)
+
+# 8. PERMANOVA
+perm <- adonis2(aitchison ~ sample, data = meta)
+pval <- perm$`Pr(>F)`[1]
+
+# 9. PCA plot
+ggplot(pca_df, aes(PC1, PC2, color = sample)) +
+
+  geom_point(size = 3, alpha = 0.9) +
+
+  # confidence ellipses
+  stat_ellipse(level = 0.95, linewidth = 1) +
+
+  # centroids
+  geom_point(
+    data = centroids,
+    aes(PC1, PC2, fill = sample),
+    shape = 23,
+    size = 5,
+    color = "black"
+  ) +
+
+  theme_classic() +
+
+  labs(
+    title = "PCA of CLR-transformed community composition",
+    subtitle = paste("PERMANOVA p =", signif(pval,3)),
+    x = paste0("PC1 (", round(var_exp[1],1), "%)"),
+    y = paste0("PC2 (", round(var_exp[2],1), "%)")
+  )
+
+
+# 6. Build dataframe for plotting
+meta <- data.frame(sample_data(ps))
+
+pca_df <- data.frame(
+  PC1 = pca$x[,1],
+  PC2 = pca$x[,2],
+  PC3 = pca$x[,3],
+  group = meta$sample
+)
+
+# 7. Compute centroids
+centroids <- pca_df %>%
+  group_by(group) %>%
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    PC3 = mean(PC3)
+  )
+
+# 8. Aitchison distance for PERMANOVA
+aitchison <- dist(clr_matrix)
+perm <- adonis2(aitchison ~ sample, data = meta)
+pval <- perm$`Pr(>F)`[1]
+
+# Function to make PCA plot
+plot_pca <- function(df, xvar, yvar, var_exp, centroids, pval){
+  ggplot(df, aes_string(x = xvar, y = yvar, color = "group")) +
+    geom_point(size = 3, alpha = 0.9) +
+    stat_ellipse(level = 0.95, linewidth = 1) +
+    geom_point(
+      data = centroids,
+      aes_string(x = xvar, y = yvar, fill = "group"),
+      shape = 23,
+      size = 5,
+      color = "black"
+    ) +
+    theme_classic() +
+    labs(
+      title = paste0(xvar, " vs ", yvar, " PCA"),
+      subtitle = paste("PERMANOVA p =", signif(pval,3)),
+      x = paste0(xvar, " (", round(var_exp[as.numeric(substr(xvar,3,3))],1), "%)"),
+      y = paste0(yvar, " (", round(var_exp[as.numeric(substr(yvar,3,3))],1), "%)")
+    )
+}
+
+# 9. Generate three plots
+p1 <- plot_pca(pca_df, "PC1", "PC2", var_exp, centroids, pval)
+# p2 <- plot_pca(pca_df, "PC1", "PC3", var_exp, centroids, pval)
+# p3 <- plot_pca(pca_df, "PC2", "PC3", var_exp, centroids, pval)
+
+# 10. Display plots
+p1
+# p2
+# p3
+```
+
+
