@@ -18,7 +18,7 @@ separating SA1-A and SA1-B, because fixed traps and sediment are collected in A 
 library(here)
 
 source(here("init_files", "init.R")) #for libraries
-source(here("init_files", "init_markdown.R")) #for markdown libraries
+# source(here("init_files", "init_markdown.R")) #for markdown libraries
 ```
 
 
@@ -208,7 +208,7 @@ depth_check
 
 nutrients <- nutrients_raw %>%
   select(CTD, Depth_nominal, depth, NO3_uM, date, time, cycle_name) %>%
-  filter(Depth_nominal == 1) # only from depth 10 m?
+  filter(depth <=70)
 ```
 
 ```{r}
@@ -231,14 +231,13 @@ summary_nitrate
 
 summary_all <- full_join(summary_sst, summary_nitrate)
 summary_all
-# writexl::write_xlsx(summary_all, "summary_ctdnut_4.0.xlsx")
 ```
 
 
 # NPP
 
 ```{r}
-npp_raw <- readxl::read_excel("data/TAN1810_NPP_areal_2.0 copy.xlsx")  %>%
+npp_raw <- readxl::read_excel("data/TAN1810_NPP_areal_2.1.xlsx", sheet = "Summary_2")  %>%
   select(Cycle, Station, Depth, U_Cast, mean_NPP, sd_NPP, areal_PP) %>%
   distinct() %>%
   mutate(cycle_name = recode(Cycle, "1" = "SA1",
@@ -273,10 +272,7 @@ npp_summary <- npp_raw %>%
   # group_by(water_mass) %>%
   group_by(cycle_name) %>%
   summarise(mean = round(mean(areal_PP,  na.rm=TRUE), 1),
-            sd = round(sd(areal_PP,  na.rm=TRUE), 1) #,
-            # min = min(areal_PP,  na.rm=TRUE),
-            # max = max(areal_PP,  na.rm=TRUE)
-            ) %>%
+            sd = round(sd(areal_PP,  na.rm=TRUE), 1) %>%
    unite("npp_int", mean:sd, sep = " ± ") 
   
 npp_summary 
@@ -286,27 +282,17 @@ summary_all
 
 # Chla
 ```{r}
-chl <- readxl::read_excel("data/TAN1810_SFChla_2.0 copy.xls", sheet = "chla_int") %>%
+chl <- readxl::read_excel("data/TAN1810_SFChla_2.0 copy.xls", sheet = "chla_int_2") %>%
   dplyr::select(NIWA_ID, U_Cast, cycle, cycle_2, time, depth_corrected, areal_chl)%>%
   filter(!is.na(cycle)) %>%
   dplyr::rename(depth = `depth_corrected`,
          CTD = `U_Cast`) %>%
-  # mutate(cycle_name = recode(cycle, "1" = "SA1",
-  #                                   "2" = "SA2",
-  #                                   "3" = "ST1",
-  #                                   "4" = "ST2",
-  #                                   "5" = "SA3")) %>%
   mutate(cycle_name = recode(cycle_2, "1a" = "SA1-a",
                                     "1b" = "SA1-b",
                                     "2" = "SA2",
                                     "3" = "ST1",
                                     "4" = "ST2",
                                     "5" = "SA3")) %>%
-  # mutate(cycle_name = fct_relevel(cycle_name, "ST1", "ST2", "SA1", "SA2", "SA3")) %>%
-  # mutate(cycle_name_2 = fct_relevel(cycle_name_2, "ST1", "ST2", "SA1-a", "SA1-b", "SA2", "SA3")) %>%
-  # na_if(0) %>% # replace 0% as NA as these values were not measured.
-  # drop_na(Chla_0.2,Chla_2, Chla_20)  %>% #remove rows where there are some missing measurements for the SF? I think this is better so that the values are more accurate. change the way int chla is calculated? decide later.
-  # filter(cycle_name_2 != "SA1-b") %>%  # filter out stations for cycle SA1-B
   filter(time == "noon")
 
 #by water mass
@@ -328,94 +314,7 @@ summary_all <- data.frame(summary_all) %>%
   rownames_to_column(var = "var")
 summary_all
 
-writexl::write_xlsx(summary_all, path = "env_table.xlsx")
+writexl::write_xlsx(summary_all, path = "env_table_v2.xlsx")
 ```
 
-#Statistical tests
-
-```{r}
-library("ggpubr")
-
-t_test_df<-CTD %>%
-  select(t_mean, s_mean, cycle_name) %>%
-  mutate(water_mass = dplyr::recode(cycle_name, 
-                             "SA1-a" = "SA",
-                             "SA1-b" = "SA",
-                             "SA2" = "SA",
-                             "SA3" = "SA",
-                             "ST1" = "ST",
-                             "ST2" = "ST"
-                             )) 
-
-# Temperature
-# checks, all groups meet assumptions of normality and homoskedasticity
-hist(t_test_df$t_mean)
-qqnorm(t_test_df$t_mean)
-p<-with(t_test_df, shapiro.test(t_mean[water_mass == "ST"]))
-print(p)
-p<-with(t_test_df, shapiro.test(t_mean[water_mass == "SA"]))
-print(p)
-
-# check for variance. If variance sig different, use var.equal = FALSE
-var.test(t_mean ~ water_mass, t_test_df)
-
-# res <- t.test(t_mean ~ water_mass, data =  t_test_df, var.equal = TRUE)
-# print(res)
-
-res <- wilcox.test(t_mean ~ water_mass, data = t_test_df,
-                   exact = FALSE)
-print(res)
-
-# salinity
-
-# checks, all groups meet assumptions of normality and homoskedasticity
-# hist(t_test_df$s_mean)
-# qqnorm(t_test_df$s_mean)
-# p<-with(t_test_df, shapiro.test(s_mean[water_mass == "ST"]))
-# print(p)
-# p<-with(t_test_df, shapiro.test(s_mean[water_mass == "SA"]))
-# print(p)
-# 
-# # check for variance. If variance sig different, use var.equal = FALSE
-# var.test(s_mean ~ water_mass, t_test_df)
-
-res <- t.test(t_mean ~ water_mass, data =  t_test_df, var.equal = TRUE)
-# print(res)
-
-res <- wilcox.test(s_mean ~ water_mass, data = t_test_df,
-                   exact = FALSE)
-print(res)
-
-#nitrate
-t_test_df<-nutrients %>%
-  select(NO3_uM, cycle_name) %>%
-  mutate(water_mass = dplyr::recode(cycle_name, 
-                             "SA1-a" = "SA",
-                             "SA1-b" = "SA",
-                             "SA2" = "SA",
-                             "SA3" = "SA",
-                             "ST1" = "ST",
-                             "ST2" = "ST"
-                             )) 
-
-# checks, all groups meet assumptions of normality and homoskedasticity
-hist(t_test_df$NO3_uM)
-qqnorm(t_test_df$NO3_uM)
-p<-with(t_test_df, shapiro.test(NO3_uM[water_mass == "ST"]))
-print(p)
-p<-with(t_test_df, shapiro.test(NO3_uM[water_mass == "SA"]))
-print(p)
-
-# check for variance. If variance sig different, use var.equal = FALSE
-var.test(NO3_uM ~ water_mass, t_test_df)
-
-res <- t.test(NO3_uM ~ water_mass, data =  t_test_df, var.equal = TRUE)
-print(res)
-
-res <- wilcox.test(NO3_uM ~ water_mass, data = t_test_df,
-                   exact = FALSE)
-print(res)
-
-
-```
 
